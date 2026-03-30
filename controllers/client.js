@@ -1,0 +1,382 @@
+const tenantModel = require('../models/tenant');
+const serviceModel = require('../models/service');
+const appointmentModel = require('../models/appointment');
+const sessionService = require('../services/session');
+const scheduler = require('../services/scheduler');
+const { sendMessage } = require('../services/whatsapp');
+const { formatCurrency } = require('../utils/helpers');
+const {
+  isValidDate,
+  isDateInPast,
+  getDayOfWeek,
+  createUTCDateTime,
+  formatDateTime,
+  toHarareTime,
+  formatTime,
+  todayHarare,
+} = require('../utils/time');
+const logger = require('../utils/logger');
+
+async function handleClientMessage(phone, body, session) {
+  const lowerBody = body.toLowerCase().trim();
+
+  // Check for "my appointment" command
+  if (lowerBody === 'my appointment' || lowerBody === 'my appointments') {
+    return showClientAppointments(phone);
+  }
+
+  // Check for client cancel command
+  if (lowerBody.startsWith('cancel ')) {
+    const idStr = body.substring('cancel'.length).trim();
+    return cancelClientAppointment(phone, idStr);
+  }
+
+  // If in a booking flow, handle the state
+  if (session && session.state) {
+    return handleClientState(phone, body, session);
+  }
+
+  // If no session and no recognized command, send a helpful message
+  return sendMessage(
+    phone,
+    `👋 Welcome to *OnTime*!\n\nTo book an appointment, use the booking link provided by your salon.\n\nIf you already have a booking, type *my appointment* to view it.`
+  );
+}
+
+async function startBooking(phone, bookingCode) {
+  const tenant = await tenantModel.findByBookingCode(bookingCode);
+  if (!tenant) {
+    return sendMessage(phone, `Sorry, no salon found with code "${bookingCode}". Please check the link and try again.`);
+  }
+
+  // Check if this phone is the salon owner
+  if (phone === tenant.owner_phone) {
+    return sendMessage(phone, `You can't book an appointment at your own salon! Use *today* or *appointments* to manage your schedule.`);
+  }
+
+  const services = await serviceModel.findByTenant(tenant.id);
+  if (services.length === 0) {
+    return sendMessage(phone, `*${tenant.name}* hasn't set up any services yet. Please try again later.`);
+  }
+
+  await sessionService.setSession(phone, {
+    role: 'client',
+    state: 'awaiting_name',
+    tenant_id: tenant.id,
+    context: {
+      booking_code: bookingCode,
+      salon_name: tenant.name,
+    },
+  });
+
+  return sendMessage(
+    phone,
+    `Welcome to *${tenant.name}*! 💇\n📍 ${tenant.location || 'Location not set'}\n\nLet's book your appointment. What is your *name*?`
+  );
+}
+
+async function handleClientState(phone, body, session) {
+  const state = session.state;
+
+  switch (state) {
+    case 'awaiting_name':
+      return handleName(phone, body, session);
+    case 'awaiting_service':
+      return handleServiceSelection(phone, body, session);
+    case 'awaiting_date':
+      return handleDateSelection(phone, body, session);
+    case 'awaiting_time':
+      return handleTimeSelection(phone, body, session);
+    case 'awaiting_confirmation':
+      return handleConfirmation(phone, body, session);
+    default:
+      await sessionService.clearSession(phone);
+      return sendMessage(phone, 'Something went wrong. Please use the booking link to start again.');
+  }
+}
+
+async function handleName(phone, body, session) {
+  const name = body.trim();
+  if (name.length < 2) {
+    return sendMessage(phone, 'Please provide your name (at least 2 characters).');
+  }
+
+  const services = await serviceModel.findByTenant(session.tenant_id);
+  if (services.length === 0) {
+    await sessionService.clearSession(phone);
+    return sendMessage(phone, 'Sorry, this salon has no services available right now.');
+  }
+
+  const lines = services.map(
+    (s, i) => `${i + 1}. *${s.name}* - ${s.duration_minutes} min - ${formatCurrency(s.price)}`
+  );
+
+  await sessionService.updateSession(phone, {
+    state: 'awaiting_service',
+    context: { client_name: name },
+  });
+
+  return sendMessage(
+    phone,
+    `Hi *${name}*! 👋\n\nPlease choose a service by typing the *number*:\n\n${lines.join('\n')}`
+  );
+}
+
+async function handleServiceSelection(phone, body, session) {
+  const input = body.trim();
+  const services = await serviceModel.findByTenant(session.tenant_id);
+
+  let selectedService = null;
+  const num = parseInt(input, 10);
+
+  if (!isNaN(num) && num >= 1 && num <= services.length) {
+    selectedService = services[num - 1];
+  } else {
+    // Try matching by name
+    selectedService = services.find(
+      (s) => s.name.toLowerCase() === input.toLowerCase()
+    );
+  }
+
+  if (!selectedService) {
+    return sendMessage(
+      phone,
+      `Please select a valid service number (1-${services.length}).`
+    );
+  }
+
+  await sessionService.updateSession(phone, {
+    state: 'awaiting_date',
+    context: {
+      selected_service_id: selectedService.id,
+      selected_service_name: selectedService.name,
+      selected_service_duration: selectedService.duration_minutes,
+      selected_service_price: selectedService.price,
+    },
+  });
+
+  const today = todayHarare();
+
+  return sendMessage(
+    phone,
+    `You selected: *${selectedService.name}* (${selectedService.duration_minutes} min, ${formatCurrency(selectedService.price)})\n\nWhat *date* would you like? (format: YYYY-MM-DD)\nExample: *${today}*\n\nOr type *today* or *tomorrow*.`
+  );
+}
+
+async function handleDateSelection(phone, body, session) {
+  let dateStr = body.trim().toLowerCase();
+
+  // Handle shortcuts
+  if (dateStr === 'today') {
+    dateStr = todayHarare();
+  } else if (dateStr === 'tomorrow') {
+    const d = new Date(todayHarare() + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() + 1);
+    dateStr = d.toISOString().split('T')[0];
+  }
+
+  if (!isValidDate(dateStr)) {
+    return sendMessage(phone, 'Please provide a valid date in *YYYY-MM-DD* format.\nExample: *2026-03-31*');
+  }
+
+  if (isDateInPast(dateStr)) {
+    return sendMessage(phone, 'That date is in the past. Please choose a future date.');
+  }
+
+  // Check if salon is open on that day
+  const tenant = await tenantModel.findById(session.tenant_id);
+  const dayName = getDayOfWeek(dateStr);
+  const daySchedule = tenant.working_hours[dayName];
+
+  if (!daySchedule || daySchedule.toLowerCase() === 'closed') {
+    return sendMessage(
+      phone,
+      `Sorry, *${tenant.name}* is closed on *${dayName.charAt(0).toUpperCase() + dayName.slice(1)}*.\nPlease choose another date.`
+    );
+  }
+
+  // Get available slots
+  const slots = await scheduler.getAvailableSlots(
+    session.tenant_id,
+    dateStr,
+    session.context.selected_service_duration
+  );
+
+  if (slots.length === 0) {
+    return sendMessage(
+      phone,
+      `No available time slots on *${dateStr}*. Please try another date.`
+    );
+  }
+
+  // Format slots in a grid-like display
+  const slotLines = [];
+  for (let i = 0; i < slots.length; i += 4) {
+    const row = slots.slice(i, i + 4).map((s, j) => `${i + j + 1}. ${s}`);
+    slotLines.push(row.join('  |  '));
+  }
+
+  await sessionService.updateSession(phone, {
+    state: 'awaiting_time',
+    context: {
+      selected_date: dateStr,
+      available_slots: slots,
+    },
+  });
+
+  return sendMessage(
+    phone,
+    `📅 Available slots on *${dateStr}* (${dayName}):\n\n${slotLines.join('\n')}\n\nType the *number* or *time* (e.g., "09:00") to select.`
+  );
+}
+
+async function handleTimeSelection(phone, body, session) {
+  const input = body.trim();
+  const slots = session.context.available_slots || [];
+
+  let selectedTime = null;
+  const num = parseInt(input, 10);
+
+  if (!isNaN(num) && num >= 1 && num <= slots.length) {
+    selectedTime = slots[num - 1];
+  } else if (/^\d{2}:\d{2}$/.test(input) && slots.includes(input)) {
+    selectedTime = input;
+  }
+
+  if (!selectedTime) {
+    return sendMessage(
+      phone,
+      `Please select a valid time slot. Type a number (1-${slots.length}) or a time from the list.`
+    );
+  }
+
+  const ctx = session.context;
+
+  await sessionService.updateSession(phone, {
+    state: 'awaiting_confirmation',
+    context: { selected_time: selectedTime },
+  });
+
+  return sendMessage(
+    phone,
+    `📋 *Booking Summary*\n\n` +
+      `🏪 Salon: *${ctx.salon_name}*\n` +
+      `💇 Service: *${ctx.selected_service_name}*\n` +
+      `💰 Price: ${formatCurrency(ctx.selected_service_price)}\n` +
+      `📅 Date: *${ctx.selected_date}*\n` +
+      `🕐 Time: *${selectedTime}*\n` +
+      `⏱️ Duration: ${ctx.selected_service_duration} min\n\n` +
+      `Type *yes* to confirm or *no* to cancel.`
+  );
+}
+
+async function handleConfirmation(phone, body, session) {
+  const input = body.trim().toLowerCase();
+
+  if (input === 'no' || input === 'cancel') {
+    await sessionService.clearSession(phone);
+    return sendMessage(phone, 'Booking cancelled. You can start again anytime using the booking link.');
+  }
+
+  if (input !== 'yes' && input !== 'confirm' && input !== 'y') {
+    return sendMessage(phone, 'Please type *yes* to confirm or *no* to cancel.');
+  }
+
+  const ctx = session.context;
+
+  try {
+    // Create the appointment
+    const startTimeUTC = createUTCDateTime(ctx.selected_date, ctx.selected_time);
+    const endTimeUTC = new Date(startTimeUTC.getTime() + ctx.selected_service_duration * 60 * 1000);
+
+    const appointment = await appointmentModel.create({
+      tenantId: session.tenant_id,
+      clientName: ctx.client_name,
+      clientPhone: phone,
+      serviceId: ctx.selected_service_id,
+      startTime: startTimeUTC.toISOString(),
+      endTime: endTimeUTC.toISOString(),
+    });
+
+    await sessionService.clearSession(phone);
+
+    // Notify the salon owner
+    const tenant = await tenantModel.findById(session.tenant_id);
+    if (tenant) {
+      sendMessage(
+        tenant.owner_phone,
+        `🔔 *New Booking!*\n\n` +
+          `Client: ${ctx.client_name}\n` +
+          `Service: ${ctx.selected_service_name}\n` +
+          `Date: ${ctx.selected_date}\n` +
+          `Time: ${ctx.selected_time}\n` +
+          `Appointment ID: #${appointment.id}`
+      ).catch((err) => logger.error(`Failed to notify salon owner: ${err.message}`));
+    }
+
+    return sendMessage(
+      phone,
+      `✅ *Booking Confirmed!*\n\n` +
+        `🏪 ${ctx.salon_name}\n` +
+        `💇 ${ctx.selected_service_name}\n` +
+        `📅 ${ctx.selected_date} at ${ctx.selected_time}\n` +
+        `🆔 Appointment #${appointment.id}\n\n` +
+        `Type *my appointment* to view your booking details.\n` +
+        `Thank you! See you then! 🎉`
+    );
+  } catch (err) {
+    logger.error(`Failed to create appointment: ${err.message}`);
+    return sendMessage(phone, 'Sorry, there was an error creating your booking. Please try again.');
+  }
+}
+
+async function showClientAppointments(phone) {
+  const appointments = await appointmentModel.findByClientPhone(phone);
+
+  if (appointments.length === 0) {
+    return sendMessage(phone, 'You have no upcoming appointments.');
+  }
+
+  const lines = appointments.map((a, i) => {
+    const hTime = toHarareTime(a.start_time);
+    const dateStr = hTime.toISOString().split('T')[0];
+    const timeStr = formatTime(hTime);
+    return `${i + 1}. *${a.service_name || 'Service'}* at *${a.salon_name}*\n   📅 ${dateStr} at ${timeStr}\n   🆔 ID: #${a.id}`;
+  });
+
+  return sendMessage(
+    phone,
+    `📋 *Your Upcoming Appointments*\n\n${lines.join('\n\n')}\n\nTo cancel, type *cancel <id>* (e.g., cancel ${appointments[0].id})`
+  );
+}
+
+async function cancelClientAppointment(phone, idStr) {
+  const id = parseInt(idStr, 10);
+  if (isNaN(id)) {
+    return sendMessage(phone, 'Please provide a valid appointment ID.\nUsage: *cancel <id>*');
+  }
+
+  const cancelled = await appointmentModel.cancelByClient(id, phone);
+  if (!cancelled) {
+    return sendMessage(phone, `Appointment #${id} not found or already cancelled.`);
+  }
+
+  // Notify salon owner
+  const apptDetails = await appointmentModel.findById(id);
+  if (apptDetails) {
+    const tenant = await tenantModel.findById(apptDetails.tenant_id);
+    if (tenant) {
+      sendMessage(
+        tenant.owner_phone,
+        `⚠️ *Appointment Cancelled*\n\nAppointment #${id} has been cancelled by the client (${apptDetails.client_name}).`
+      ).catch((err) => logger.error(`Failed to notify salon of cancellation: ${err.message}`));
+    }
+  }
+
+  return sendMessage(phone, `✅ Appointment #${id} has been cancelled.`);
+}
+
+module.exports = {
+  handleClientMessage,
+  startBooking,
+};
