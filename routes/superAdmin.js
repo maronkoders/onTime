@@ -60,6 +60,56 @@ router.get('/salon/:id', requireSuperAdmin, async (req, res) => {
   }
 });
 
+// Activate salon (protected)
+router.post('/salon/:id/activate', requireSuperAdmin, async (req, res) => {
+  try {
+    const salonId = parseInt(req.params.id, 10);
+    await tenantModel.activateTenant(salonId);
+    res.redirect(`/admin/salon/${salonId}`);
+  } catch (err) {
+    logger.error(`Activate salon error: ${err.message}`);
+    res.status(500).send('Error activating salon');
+  }
+});
+
+// Deactivate salon (protected)
+router.post('/salon/:id/deactivate', requireSuperAdmin, async (req, res) => {
+  try {
+    const salonId = parseInt(req.params.id, 10);
+    await tenantModel.deactivateTenant(salonId);
+    res.redirect(`/admin/salon/${salonId}`);
+  } catch (err) {
+    logger.error(`Deactivate salon error: ${err.message}`);
+    res.status(500).send('Error deactivating salon');
+  }
+});
+
+// Extend trial (protected)
+router.post('/salon/:id/extend-trial', requireSuperAdmin, async (req, res) => {
+  try {
+    const salonId = parseInt(req.params.id, 10);
+    const days = parseInt(req.body.days, 10) || 14;
+    await tenantModel.extendTrial(salonId, days);
+    res.redirect(`/admin/salon/${salonId}`);
+  } catch (err) {
+    logger.error(`Extend trial error: ${err.message}`);
+    res.status(500).send('Error extending trial');
+  }
+});
+
+// Activate subscription (protected)
+router.post('/salon/:id/activate-subscription', requireSuperAdmin, async (req, res) => {
+  try {
+    const salonId = parseInt(req.params.id, 10);
+    const days = parseInt(req.body.days, 10) || 30;
+    await tenantModel.activateSubscription(salonId, days);
+    res.redirect(`/admin/salon/${salonId}`);
+  } catch (err) {
+    logger.error(`Activate subscription error: ${err.message}`);
+    res.status(500).send('Error activating subscription');
+  }
+});
+
 async function getAllSalonsWithStats() {
   const tenants = await tenantModel.getAll();
   const salons = [];
@@ -67,6 +117,7 @@ async function getAllSalonsWithStats() {
   for (const tenant of tenants) {
     const appointments = await appointmentModel.findByTenant(tenant.id);
     const services = await serviceModel.findByTenant(tenant.id);
+    const subscriptionStatus = tenantModel.getSubscriptionStatus(tenant);
     
     const totalAppointments = appointments.length;
     const upcomingAppointments = appointments.filter(a => new Date(a.start_time) > new Date()).length;
@@ -80,6 +131,11 @@ async function getAllSalonsWithStats() {
       bookingCode: tenant.booking_code,
       createdAt: tenant.created_at,
       workingHours: tenant.working_hours,
+      isActive: tenant.is_active,
+      subscriptionStatus: tenant.subscription_status,
+      trialEndsAt: tenant.trial_ends_at,
+      subscriptionEndsAt: tenant.subscription_ends_at,
+      statusInfo: subscriptionStatus,
       totalAppointments,
       upcomingAppointments,
       totalServices,
@@ -95,6 +151,7 @@ async function getSalonDetails(salonId) {
   
   const appointments = await appointmentModel.findByTenant(salonId);
   const services = await serviceModel.findByTenant(salonId);
+  const subscriptionStatus = tenantModel.getSubscriptionStatus(tenant);
   
   // Sort appointments by date
   appointments.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
@@ -104,6 +161,7 @@ async function getSalonDetails(salonId) {
     appointments,
     services,
     totalAppointments: appointments.length,
+    statusInfo: subscriptionStatus,
   };
 }
 
@@ -226,9 +284,13 @@ function getDashboardPage(salons) {
   const totalAppointments = salons.reduce((sum, s) => sum + s.totalAppointments, 0);
   const totalServices = salons.reduce((sum, s) => sum + s.totalServices, 0);
   
-  const salonRows = salons.map(salon => `
+  const salonRows = salons.map(salon => {
+    const statusClass = salon.statusInfo.valid ? 'badge-green' : 'badge-red';
+    const statusText = salon.isActive === false ? 'Deactivated' : 
+                       salon.statusInfo.valid ? 'Active' : 'Expired';
+    return `
     <tr onclick="window.location='/admin/salon/${salon.id}'" style="cursor: pointer;">
-      <td><strong>${escapeHtml(salon.name)}</strong></td>
+      <td><strong>${escapeHtml(salon.name)}</strong><br><span class="badge ${statusClass}">${statusText}</span></td>
       <td>${escapeHtml(salon.location || 'N/A')}</td>
       <td>${salon.ownerPhone}</td>
       <td><span class="badge">${salon.totalAppointments}</span></td>
@@ -237,7 +299,7 @@ function getDashboardPage(salons) {
       <td><span class="code">${salon.bookingCode}</span></td>
       <td>${formatDate(salon.createdAt)}</td>
     </tr>
-  `).join('');
+  `}).join('');
   
   return `
 <!DOCTYPE html>
@@ -368,6 +430,14 @@ function getDashboardPage(salons) {
       background: #d1fae5;
       color: #047857;
     }
+    .badge-red {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+    .badge-orange {
+      background: #fef3c7;
+      color: #d97706;
+    }
     .code {
       font-family: 'Courier New', monospace;
       background: #f1f5f9;
@@ -483,6 +553,21 @@ function getSalonDetailPage(salon) {
     .map(([day, hours]) => `<span class="tag">${day}: ${hours}</span>`)
     .join('');
   
+  // Subscription status display
+  const statusInfo = salon.statusInfo;
+  const statusClass = statusInfo.valid ? 'badge-green' : 'badge-red';
+  const statusText = salon.is_active === false ? 'Deactivated' : 
+                     statusInfo.valid ? 'Active' : 'Expired';
+  
+  const trialEndDate = salon.trial_ends_at ? new Date(salon.trial_ends_at).toLocaleDateString() : 'N/A';
+  const subEndDate = salon.subscription_ends_at ? new Date(salon.subscription_ends_at).toLocaleDateString() : 'N/A';
+  
+  // Management buttons
+  const isActive = salon.is_active !== false;
+  const toggleButton = isActive 
+    ? `<form method="POST" action="/admin/salon/${salon.id}/deactivate" style="display:inline;"><button type="submit" class="btn btn-danger">Deactivate Account</button></form>`
+    : `<form method="POST" action="/admin/salon/${salon.id}/activate" style="display:inline;"><button type="submit" class="btn btn-success">Activate Account</button></form>`;
+  
   return `
 <!DOCTYPE html>
 <html>
@@ -546,11 +631,28 @@ function getSalonDetailPage(salon) {
       gap: 20px;
       color: #64748b;
       font-size: 14px;
+      margin-bottom: 16px;
     }
     .salon-meta span {
       display: flex;
       align-items: center;
       gap: 6px;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+    .status-active {
+      background: #d1fae5;
+      color: #047857;
+    }
+    .status-expired {
+      background: #fee2e2;
+      color: #dc2626;
     }
     .tag {
       display: inline-block;
@@ -571,6 +673,9 @@ function getSalonDetailPage(salon) {
     .section-header {
       padding: 20px 24px;
       border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
     .section-header h3 {
       font-size: 16px;
@@ -610,6 +715,10 @@ function getSalonDetailPage(salon) {
       background: #d1fae5;
       color: #047857;
     }
+    .badge-red {
+      background: #fee2e2;
+      color: #dc2626;
+    }
     .info-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -637,6 +746,48 @@ function getSalonDetailPage(salon) {
       padding: 40px 20px;
       color: #64748b;
     }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+    .btn-success:hover {
+      background: #059669;
+    }
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #5568d3;
+    }
+    .management-form {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .management-form input {
+      width: 60px;
+      padding: 6px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 14px;
+    }
     @media (max-width: 768px) {
       .header { padding: 16px 20px; }
       .container { padding: 20px; }
@@ -660,6 +811,9 @@ function getSalonDetailPage(salon) {
         <span>🔖 ${salon.booking_code}</span>
         <span>📅 Created ${formatDate(salon.created_at)}</span>
       </div>
+      <div class="status-badge ${statusInfo.valid ? 'status-active' : 'status-expired'}">
+        ${statusText} • ${salon.subscription_status === 'trial' ? 'Trial' : 'Subscribed'}
+      </div>
     </div>
     
     <div class="section">
@@ -675,6 +829,40 @@ function getSalonDetailPage(salon) {
         <div class="info-item">
           <label>Salon ID</label>
           <value>#${salon.id}</value>
+        </div>
+        <div class="info-item">
+          <label>Trial Ends</label>
+          <value>${trialEndDate}</value>
+        </div>
+        <div class="info-item">
+          <label>Subscription Ends</label>
+          <value>${subEndDate}</value>
+        </div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-header">
+        <h3>🔧 Account Management</h3>
+      </div>
+      <div style="padding: 24px;">
+        <div style="margin-bottom: 20px;">
+          <h4 style="font-size: 14px; color: #64748b; margin-bottom: 12px;">Account Status</h4>
+          ${toggleButton}
+        </div>
+        <div style="margin-bottom: 20px;">
+          <h4 style="font-size: 14px; color: #64748b; margin-bottom: 12px;">Extend Trial</h4>
+          <form method="POST" action="/admin/salon/${salon.id}/extend-trial" class="management-form">
+            <input type="number" name="days" value="14" min="1" max="365">
+            <button type="submit" class="btn btn-primary">Extend Trial</button>
+          </form>
+        </div>
+        <div>
+          <h4 style="font-size: 14px; color: #64748b; margin-bottom: 12px;">Activate Subscription</h4>
+          <form method="POST" action="/admin/salon/${salon.id}/activate-subscription" class="management-form">
+            <input type="number" name="days" value="30" min="1" max="365">
+            <button type="submit" class="btn btn-success">Activate Subscription</button>
+          </form>
         </div>
       </div>
     </div>

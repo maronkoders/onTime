@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS tenants (
         "saturday": "09:00-17:00",
         "sunday": "closed"
     }',
+    is_active BOOLEAN DEFAULT TRUE,
+    subscription_status VARCHAR(20) DEFAULT 'trial',
+    trial_ends_at TIMESTAMP DEFAULT (NOW() + INTERVAL '14 days'),
+    subscription_ends_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
 );
 

@@ -47,6 +47,34 @@ async function handleAdminMessage(phone, body, session, tenant) {
     );
   }
 
+  // Check subscription status
+  const subscriptionStatus = tenantModel.getSubscriptionStatus(tenant);
+  
+  if (!subscriptionStatus.valid) {
+    let message = `⛔ *Access Denied*\n\n`;
+    
+    if (subscriptionStatus.reason === 'Account deactivated') {
+      message += `Your salon account has been deactivated.\n\n` +
+        `Please contact support to reactivate your account.`;
+    } else if (subscriptionStatus.trialEnded) {
+      const trialEndDate = new Date(tenant.trial_ends_at).toLocaleDateString();
+      message += `Your *14-day free trial* ended on ${trialEndDate}.\n\n` +
+        `To continue using OnTime, please upgrade to a paid subscription.\n\n` +
+        `Contact support to learn about our affordable plans.`;
+    } else if (subscriptionStatus.subscriptionEnded) {
+      const subEndDate = new Date(tenant.subscription_ends_at).toLocaleDateString();
+      message += `Your subscription expired on ${subEndDate}.\n\n` +
+        `Please renew your subscription to continue using all features.\n\n` +
+        `Contact support for renewal options.`;
+    } else {
+      message += subscriptionStatus.reason || 'Access denied.';
+    }
+    
+    message += `\n\n📧 *Need help?* Contact our support team.`;
+    
+    return sendMessage(phone, message);
+  }
+
   let lowerBody = body.toLowerCase().trim();
 
   // Check if we're in a multi-step flow
