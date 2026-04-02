@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OnTime — WhatsApp Simulator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0b141a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #e9edef;
+    }
+
+    .chat-container {
+      width: 100%;
+      max-width: 500px;
+      height: 100vh;
+      max-height: 750px;
+      display: flex;
+      flex-direction: column;
+      background: #0b141a;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 0 40px rgba(0,0,0,0.4);
+    }
+
+    /* Header */
+    .chat-header {
+      background: #202c33;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #2a3942;
+    }
+
+    .chat-header .avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #00a884;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 18px;
+      color: #fff;
+    }
+
+    .chat-header .info h3 {
+      font-size: 16px;
+      font-weight: 500;
+      color: #e9edef;
+    }
+
+    .chat-header .info p {
+      font-size: 12px;
+      color: #8696a0;
+    }
+
+    /* Phone input bar */
+    .phone-bar {
+      background: #202c33;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #2a3942;
+    }
+
+    .phone-bar label {
+      font-size: 13px;
+      color: #8696a0;
+      white-space: nowrap;
+    }
+
+    .phone-bar input {
+      flex: 1;
+      background: #2a3942;
+      border: none;
+      border-radius: 8px;
+      padding: 6px 12px;
+      color: #e9edef;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .phone-bar input:focus {
+      box-shadow: 0 0 0 1px #00a884;
+    }
+
+    /* Messages area */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: #0b141a;
+      background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23111b21' fill-opacity='0.6'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/svg%3E");
+    }
+
+    .chat-messages::-webkit-scrollbar { width: 6px; }
+    .chat-messages::-webkit-scrollbar-thumb { background: #374045; border-radius: 3px; }
+
+    .message {
+      max-width: 80%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.45;
+      position: relative;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+
+    .message .time {
+      font-size: 11px;
+      color: #8696a0;
+      float: right;
+      margin-left: 8px;
+      margin-top: 4px;
+    }
+
+    .message.sent {
+      align-self: flex-end;
+      background: #005c4b;
+      border-radius: 8px 0 8px 8px;
+      color: #e9edef;
+    }
+
+    .message.received {
+      align-self: flex-start;
+      background: #202c33;
+      border-radius: 0 8px 8px 8px;
+      color: #e9edef;
+    }
+
+    .system-msg {
+      align-self: center;
+      background: #182229;
+      color: #8696a0;
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 7px;
+      text-align: center;
+    }
+
+    /* Input area */
+    .chat-input {
+      background: #202c33;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-top: 1px solid #2a3942;
+    }
+
+    .chat-input input {
+      flex: 1;
+      background: #2a3942;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #e9edef;
+      font-size: 15px;
+      outline: none;
+    }
+
+    .chat-input input:focus {
+      box-shadow: 0 0 0 1px #00a884;
+    }
+
+    .chat-input input::placeholder { color: #8696a0; }
+
+    .chat-input button {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: none;
+      background: #00a884;
+      color: #fff;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .chat-input button:hover { background: #06cf9c; }
+    .chat-input button:disabled { background: #2a3942; cursor: default; }
+
+    /* WhatsApp-style formatting */
+    .message b { font-weight: 600; }
+    .message pre {
+      background: rgba(0,0,0,0.25);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: pre;
+      margin: 6px 0;
+      line-height: 1.4;
+    }
+    .message code {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      background: rgba(0,0,0,0.2);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="chat-header">
+      <div class="avatar">OT</div>
+      <div class="info">
+        <h3>OnTime Bot</h3>
+        <p>WhatsApp Simulator</p>
+      </div>
+    </div>
+
+    <div class="phone-bar">
+      <label>Your phone:</label>
+      <input type="text" id="phoneInput" value="+263775635191" placeholder="+263..." />
+    </div>
+
+    <div class="chat-messages" id="messages">
+      <div class="system-msg">Messages are simulated locally — no Twilio needed</div>
+    </div>
+
+    <div class="chat-input">
+      <input type="text" id="msgInput" placeholder="Type a message" autocomplete="off" />
+      <button id="sendBtn" title="Send">&#10148;</button>
+    </div>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const msgInput = document.getElementById('msgInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const phoneInput = document.getElementById('phoneInput');
+
+    function getTime() {
+      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatWhatsApp(text) {
+      // Code blocks: ```text``` (multiline)
+      text = text.replace(/```([\s\S]*?)```/g, '<pre>$1</pre>');
+      // Bold: *text*
+      text = text.replace(/\*(.*?)\*/g, '<b>$1</b>');
+      // Italic: _text_
+      text = text.replace(/_(.*?)_/g, '<i>$1</i>');
+      // Strikethrough: ~text~
+      text = text.replace(/~(.*?)~/g, '<s>$1</s>');
+      return text;
+    }
+
+    function addMessage(text, type) {
+      const div = document.createElement('div');
+      div.className = `message ${type}`;
+      div.innerHTML = `${formatWhatsApp(text)}<span class="time">${getTime()}</span>`;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const text = msgInput.value.trim();
+      const phone = phoneInput.value.trim();
+      if (!text || !phone) return;
+
+      addMessage(text, 'sent');
+      msgInput.value = '';
+      sendBtn.disabled = true;
+
+      try {
+        await fetch('/simulator/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, message: text }),
+        });
+      } catch (err) {
+        addMessage('Failed to send message: ' + err.message, 'system-msg');
+      }
+
+      sendBtn.disabled = false;
+      msgInput.focus();
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    msgInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    // SSE — listen for bot responses
+    const evtSource = new EventSource('/simulator/events');
+    evtSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const phone = phoneInput.value.trim();
+        const targetPhone = `whatsapp:${phone}`;
+
+        // Only show messages addressed to the current phone
+        if (data.to === targetPhone || data.to === phone) {
+          addMessage(data.body, 'received');
+        }
+      } catch (e) {
+        console.error('SSE parse error', e);
+      }
+    };
+
+    evtSource.onerror = () => {
+      console.warn('SSE connection lost, will auto-reconnect...');
+    };
+
+    msgInput.focus();
+  </script>
+</body>
+</html>

@@ -6,6 +6,7 @@ const logger = require('./utils/logger');
 const { initDatabase } = require('./config/db');
 const { startDailyNotifications } = require('./services/notifications');
 const webhookController = require('./controllers/webhook');
+const simulatorRoutes = require('./routes/simulator');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +25,9 @@ app.get('/health', (req, res) => {
 
 // Twilio WhatsApp webhook
 app.post('/webhook', webhookController.handleIncoming);
+
+// WhatsApp Web Simulator (dev only)
+app.use('/simulator', simulatorRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -50,6 +54,7 @@ async function start() {
       logger.info(`OnTime server running on port ${PORT}`);
       logger.info(`Webhook URL: http://localhost:${PORT}/webhook`);
       logger.info(`Health check: http://localhost:${PORT}/health`);
+      logger.info(`WhatsApp Simulator: http://localhost:${PORT}/simulator`);
     });
   } catch (err) {
     logger.error(`Failed to start server: ${err.message}`, { stack: err.stack });

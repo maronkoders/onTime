@@ -43,6 +43,39 @@ function formatCurrency(amount) {
   return `$${parseFloat(amount).toFixed(2)}`;
 }
 
+function formatServiceTable(services, { showId = false } = {}) {
+  // Calculate column widths
+  const rows = services.map((s, i) => ({
+    num: `${i + 1}`,
+    name: s.name,
+    dur: `${s.duration_minutes} min`,
+    price: formatCurrency(s.price),
+    id: showId ? `${s.id}` : '',
+  }));
+
+  const nameW = Math.max(7, ...rows.map(r => r.name.length));
+  const durW = Math.max(8, ...rows.map(r => r.dur.length));
+  const priceW = Math.max(5, ...rows.map(r => r.price.length));
+
+  const pad = (str, w) => str + ' '.repeat(Math.max(0, w - str.length));
+
+  let header = `#  ${pad('Service', nameW)}  ${pad('Duration', durW)}  Price`;
+  let divider = '-'.repeat(header.length);
+
+  if (showId) {
+    header += '   ID';
+    divider = '-'.repeat(header.length);
+  }
+
+  const lines = rows.map(r => {
+    let line = `${r.num}. ${pad(r.name, nameW)}  ${pad(r.dur, durW)}  ${r.price}`;
+    if (showId) line += `   ${r.id}`;
+    return line;
+  });
+
+  return '```\n' + header + '\n' + divider + '\n' + lines.join('\n') + '\n```';
+}
+
 function generateBookingLink(botPhone, bookingCode) {
   // Remove + from phone number for wa.me link
   const phone = botPhone.replace('+', '');
@@ -57,5 +90,6 @@ module.exports = {
   truncate,
   parseCommandArgs,
   formatCurrency,
+  formatServiceTable,
   generateBookingLink,
 };

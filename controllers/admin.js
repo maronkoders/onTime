@@ -3,8 +3,8 @@ const serviceModel = require('../models/service');
 const appointmentModel = require('../models/appointment');
 const sessionService = require('../services/session');
 const { sendMessage } = require('../services/whatsapp');
-const { generateBookingCode, formatCurrency, generateBookingLink } = require('../utils/helpers');
-const { formatDateTime, toHarareTime, formatTime, todayHarare, HARARE_OFFSET_HOURS } = require('../utils/time');
+const { generateBookingCode, formatCurrency, formatServiceTable, generateBookingLink } = require('../utils/helpers');
+const { formatDateTime, toHarareTime, formatTime, todayHarare, HARARE_OFFSET_HOURS, formatDateLong } = require('../utils/time');
 const logger = require('../utils/logger');
 
 const DEFAULT_WORKING_HOURS = {
@@ -354,10 +354,8 @@ async function listServices(phone, tenant) {
   if (services.length === 0) {
     return sendMessage(phone, 'No services found. Use *add service* to add one.');
   }
-  const lines = services.map(
-    (s, i) => `${i + 1}. *${s.name}* - ${s.duration_minutes} min - ${formatCurrency(s.price)} (ID: ${s.id})`
-  );
-  return sendMessage(phone, `💇 *Services for ${tenant.name}*\n\n${lines.join('\n')}`);
+  const table = formatServiceTable(services, { showId: true });
+  return sendMessage(phone, `💇 *Services for ${tenant.name}*\n\n${table}`);
 }
 
 async function startAddService(phone, tenant) {
@@ -485,8 +483,10 @@ async function listAppointments(phone, tenant) {
   }
 
   const lines = appointments.map((a, i) => {
-    const dt = formatDateTime(a.start_time);
-    return `${i + 1}. ${dt} - *${a.service_name || 'Service'}* (${a.client_name}) [ID: ${a.id}]`;
+    const hTime = toHarareTime(a.start_time);
+    const dateStr = hTime.toISOString().split('T')[0];
+    const timeStr = formatTime(hTime);
+    return `${i + 1}. ${formatDateLong(dateStr)} at ${timeStr} - *${a.service_name || 'Service'}* (${a.client_name}) [ID: ${a.id}]`;
   });
 
   return sendMessage(
@@ -530,7 +530,7 @@ async function listToday(phone, tenant) {
   );
 
   if (appointments.length === 0) {
-    return sendMessage(phone, `No appointments scheduled for today (${harareDateStr}).`);
+    return sendMessage(phone, `No appointments scheduled for today (${formatDateLong(harareDateStr)}).`);
   }
 
   const lines = appointments.map((a, i) => {
@@ -541,7 +541,7 @@ async function listToday(phone, tenant) {
 
   return sendMessage(
     phone,
-    `📋 *Today's Appointments (${harareDateStr})*\n\n${lines.join('\n')}\n\nTotal: ${appointments.length}`
+    `📋 *Today's Appointments (${formatDateLong(harareDateStr)})*\n\n${lines.join('\n')}\n\nTotal: ${appointments.length}`
   );
 }
 

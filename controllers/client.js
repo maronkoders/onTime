@@ -4,7 +4,7 @@ const appointmentModel = require('../models/appointment');
 const sessionService = require('../services/session');
 const scheduler = require('../services/scheduler');
 const { sendMessage } = require('../services/whatsapp');
-const { formatCurrency } = require('../utils/helpers');
+const { formatCurrency, formatServiceTable } = require('../utils/helpers');
 const {
   isValidDate,
   isDateInPast,
@@ -14,6 +14,8 @@ const {
   toHarareTime,
   formatTime,
   todayHarare,
+  formatDateLong,
+  MONTH_NAMES,
 } = require('../utils/time');
 const logger = require('../utils/logger');
 
@@ -36,10 +38,17 @@ async function handleClientMessage(phone, body, session) {
     return handleClientState(phone, body, session);
   }
 
-  // If no session and no recognized command, send a helpful message
+  // If no session and no recognized command, send a welcome message
   return sendMessage(
     phone,
-    `👋 Welcome to *OnTime*!\n\nTo book an appointment, use the booking link provided by your salon.\n\nIf you already have a booking, type *my appointment* to view it.`
+    `👋 Welcome to *OnTime* — your salon appointment assistant on WhatsApp!\n\n` +
+      `*For Clients:*\n` +
+      `📅 *Book* — Use the booking link from your salon to schedule an appointment\n` +
+      `📋 *My appointment* — View your upcoming bookings\n` +
+      `❌ *Cancel <id>* — Cancel a booking\n\n` +
+      `*For Salon Owners:*\n` +
+      `Type *register* to set up your salon — you'll add your name, location, working hours, and services in just a few steps.\n\n` +
+      `Get started now!`
   );
 }
 
@@ -77,6 +86,12 @@ async function startBooking(phone, bookingCode) {
 
 async function handleClientState(phone, body, session) {
   const state = session.state;
+  const lowerBody = body.trim().toLowerCase();
+
+  // Handle 'back' command to go to previous step
+  if (lowerBody === 'back') {
+    return handleGoBack(phone, session);
+  }
 
   switch (state) {
     case 'awaiting_name':
@@ -107,18 +122,19 @@ async function handleName(phone, body, session) {
     return sendMessage(phone, 'Sorry, this salon has no services available right now.');
   }
 
-  const lines = services.map(
-    (s, i) => `${i + 1}. *${s.name}* - ${s.duration_minutes} min - ${formatCurrency(s.price)}`
-  );
+  const table = formatServiceTable(services);
 
   await sessionService.updateSession(phone, {
     state: 'awaiting_service',
-    context: { client_name: name },
+    context: { 
+      client_name: name,
+      prev_state: 'awaiting_name',
+    },
   });
 
   return sendMessage(
     phone,
-    `Hi *${name}*! 👋\n\nPlease choose a service by typing the *number*:\n\n${lines.join('\n')}`
+    `Hi *${name}*! 👋\n\nPlease choose a service by typing the *NUMBER*:\n\n${table}\n\n_Type *BACK* to change your name_`
   );
 }
 
@@ -145,29 +161,45 @@ async function handleServiceSelection(phone, body, session) {
     );
   }
 
+  // Build list of next 25 open days with available slots for the calendar picker
+  const tenant = await tenantModel.findById(session.tenant_id);
+  const { available, unavailable } = await buildDateOptions(
+    tenant.working_hours, 
+    25, 
+    session.tenant_id, 
+    selectedService.duration_minutes
+  );
+
   await sessionService.updateSession(phone, {
     state: 'awaiting_date',
     context: {
+      ...session.context,
       selected_service_id: selectedService.id,
       selected_service_name: selectedService.name,
       selected_service_duration: selectedService.duration_minutes,
       selected_service_price: selectedService.price,
+      date_options: available.map(d => d.dateStr),
+      prev_state: 'awaiting_service',
     },
   });
 
-  const today = todayHarare();
+  const calendar = formatDateCalendar(available, unavailable);
 
   return sendMessage(
     phone,
-    `You selected: *${selectedService.name}* (${selectedService.duration_minutes} min, ${formatCurrency(selectedService.price)})\n\nWhat *date* would you like? (format: YYYY-MM-DD)\nExample: *${today}*\n\nOr type *today* or *tomorrow*.`
+    `You selected: *${selectedService.name}* (${selectedService.duration_minutes} min, ${formatCurrency(selectedService.price)})\n\n📅 *Pick a date:*\n\n${calendar}\n\nReply with the *NUMBER* for available dates.\n_Type *BACK* to change your service_`
   );
 }
 
 async function handleDateSelection(phone, body, session) {
   let dateStr = body.trim().toLowerCase();
+  const dateOptions = session.context.date_options || [];
 
-  // Handle shortcuts
-  if (dateStr === 'today') {
+  // Handle numbered selection from calendar
+  const num = parseInt(dateStr, 10);
+  if (!isNaN(num) && num >= 1 && num <= dateOptions.length) {
+    dateStr = dateOptions[num - 1];
+  } else if (dateStr === 'today') {
     dateStr = todayHarare();
   } else if (dateStr === 'tomorrow') {
     const d = new Date(todayHarare() + 'T12:00:00Z');
@@ -176,7 +208,7 @@ async function handleDateSelection(phone, body, session) {
   }
 
   if (!isValidDate(dateStr)) {
-    return sendMessage(phone, 'Please provide a valid date in *YYYY-MM-DD* format.\nExample: *2026-03-31*');
+    return sendMessage(phone, 'Please pick a number from the list or type a date in *YYYY-MM-DD* format.');
   }
 
   if (isDateInPast(dateStr)) {
@@ -209,24 +241,22 @@ async function handleDateSelection(phone, body, session) {
     );
   }
 
-  // Format slots in a grid-like display
-  const slotLines = [];
-  for (let i = 0; i < slots.length; i += 4) {
-    const row = slots.slice(i, i + 4).map((s, j) => `${i + j + 1}. ${s}`);
-    slotLines.push(row.join('  |  '));
-  }
+  // Format slots as vertical numbered list (like dates)
+  const slotLines = slots.map((slot, i) => `${i + 1}. ${slot}`);
 
   await sessionService.updateSession(phone, {
     state: 'awaiting_time',
     context: {
+      ...session.context,
       selected_date: dateStr,
       available_slots: slots,
+      prev_state: 'awaiting_date',
     },
   });
 
   return sendMessage(
     phone,
-    `📅 Available slots on *${dateStr}* (${dayName}):\n\n${slotLines.join('\n')}\n\nType the *number* or *time* (e.g., "09:00") to select.`
+    `📅 Available slots on *${formatDateLong(dateStr)}* (${dayName}):\n\n${slotLines.join('\n')}\n\nType the *NUMBER* to select.\n_Type *BACK* to change your date_`
   );
 }
 
@@ -234,39 +264,37 @@ async function handleTimeSelection(phone, body, session) {
   const input = body.trim();
   const slots = session.context.available_slots || [];
 
-  let selectedTime = null;
   const num = parseInt(input, 10);
 
-  if (!isNaN(num) && num >= 1 && num <= slots.length) {
-    selectedTime = slots[num - 1];
-  } else if (/^\d{2}:\d{2}$/.test(input) && slots.includes(input)) {
-    selectedTime = input;
-  }
-
-  if (!selectedTime) {
+  if (isNaN(num) || num < 1 || num > slots.length) {
     return sendMessage(
       phone,
-      `Please select a valid time slot. Type a number (1-${slots.length}) or a time from the list.`
+      `Please select a valid time slot. Type a number from 1 to ${slots.length}.`
     );
   }
 
-  const ctx = session.context;
+  const selectedTime = slots[num - 1];
+  const formattedDate = formatDateLong(session.context.selected_date);
 
   await sessionService.updateSession(phone, {
     state: 'awaiting_confirmation',
-    context: { selected_time: selectedTime },
+    context: { 
+      ...session.context,
+      selected_time: selectedTime,
+      prev_state: 'awaiting_time',
+    },
   });
 
   return sendMessage(
     phone,
     `📋 *Booking Summary*\n\n` +
-      `🏪 Salon: *${ctx.salon_name}*\n` +
-      `💇 Service: *${ctx.selected_service_name}*\n` +
-      `💰 Price: ${formatCurrency(ctx.selected_service_price)}\n` +
-      `📅 Date: *${ctx.selected_date}*\n` +
+      `🏪 Salon: *${session.context.salon_name}*\n` +
+      `💇 Service: *${session.context.selected_service_name}*\n` +
+      `💰 Price: ${formatCurrency(session.context.selected_service_price)}\n` +
+      `📅 Date: *${formattedDate}*\n` +
       `🕐 Time: *${selectedTime}*\n` +
-      `⏱️ Duration: ${ctx.selected_service_duration} min\n\n` +
-      `Type *yes* to confirm or *no* to cancel.`
+      `⏱️ Duration: ${session.context.selected_service_duration} min\n\n` +
+      `Type *YES* to confirm, *NO* to cancel, or *BACK* to change time.`
   );
 }
 
@@ -279,7 +307,7 @@ async function handleConfirmation(phone, body, session) {
   }
 
   if (input !== 'yes' && input !== 'confirm' && input !== 'y') {
-    return sendMessage(phone, 'Please type *yes* to confirm or *no* to cancel.');
+    return sendMessage(phone, 'Please type *YES* to confirm or *NO* to cancel.');
   }
 
   const ctx = session.context;
@@ -303,12 +331,17 @@ async function handleConfirmation(phone, body, session) {
     // Notify the salon owner
     const tenant = await tenantModel.findById(session.tenant_id);
     if (tenant) {
+      const formattedDate = formatDateLong(ctx.selected_date);
+      const cleanPhone = phone.replace(/^\+/, '');
+      const waLink = `https://wa.me/${cleanPhone}`;
+
       sendMessage(
         tenant.owner_phone,
         `🔔 *New Booking!*\n\n` +
           `Client: ${ctx.client_name}\n` +
+          `📱 WhatsApp: ${waLink}\n` +
           `Service: ${ctx.selected_service_name}\n` +
-          `Date: ${ctx.selected_date}\n` +
+          `Date: ${formattedDate}\n` +
           `Time: ${ctx.selected_time}\n` +
           `Appointment ID: #${appointment.id}`
       ).catch((err) => logger.error(`Failed to notify salon owner: ${err.message}`));
@@ -319,9 +352,9 @@ async function handleConfirmation(phone, body, session) {
       `✅ *Booking Confirmed!*\n\n` +
         `🏪 ${ctx.salon_name}\n` +
         `💇 ${ctx.selected_service_name}\n` +
-        `📅 ${ctx.selected_date} at ${ctx.selected_time}\n` +
+        `📅 ${formatDateLong(ctx.selected_date)} at ${ctx.selected_time}\n` +
         `🆔 Appointment #${appointment.id}\n\n` +
-        `Type *my appointment* to view your booking details.\n` +
+        `Type *MY APPOINTMENT* to view your booking details.\n` +
         `Thank you! See you then! 🎉`
     );
   } catch (err) {
@@ -341,19 +374,19 @@ async function showClientAppointments(phone) {
     const hTime = toHarareTime(a.start_time);
     const dateStr = hTime.toISOString().split('T')[0];
     const timeStr = formatTime(hTime);
-    return `${i + 1}. *${a.service_name || 'Service'}* at *${a.salon_name}*\n   📅 ${dateStr} at ${timeStr}\n   🆔 ID: #${a.id}`;
+    return `${i + 1}. *${a.service_name || 'Service'}* at *${a.salon_name}*\n   📅 ${formatDateLong(dateStr)} at ${timeStr}\n   🆔 ID: #${a.id}`;
   });
 
   return sendMessage(
     phone,
-    `📋 *Your Upcoming Appointments*\n\n${lines.join('\n\n')}\n\nTo cancel, type *cancel <id>* (e.g., cancel ${appointments[0].id})`
+    `📋 *Your Upcoming Appointments*\n\n${lines.join('\n\n')}\n\nTo cancel, type *CANCEL <id>* (e.g., CANCEL ${appointments[0].id})`
   );
 }
 
 async function cancelClientAppointment(phone, idStr) {
   const id = parseInt(idStr, 10);
   if (isNaN(id)) {
-    return sendMessage(phone, 'Please provide a valid appointment ID.\nUsage: *cancel <id>*');
+    return sendMessage(phone, 'Please provide a valid appointment ID.\nUsage: *CANCEL <id>*');
   }
 
   const cancelled = await appointmentModel.cancelByClient(id, phone);
@@ -374,6 +407,141 @@ async function cancelClientAppointment(phone, idStr) {
   }
 
   return sendMessage(phone, `✅ Appointment #${id} has been cancelled.`);
+}
+
+// --- Helpers ---
+
+const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+async function buildDateOptions(workingHours, count, tenantId, serviceDuration) {
+  const options = [];
+  const unavailableDates = [];
+  const todayStr = todayHarare();
+  const d = new Date(todayStr + 'T12:00:00Z');
+  let daysChecked = 0;
+  const maxDaysToCheck = 90; // Increased to find enough dates with slots
+
+  while (options.length < count && daysChecked < maxDaysToCheck) {
+    const dateStr = d.toISOString().split('T')[0];
+    const dayName = getDayOfWeek(dateStr);
+    const schedule = workingHours[dayName];
+    const isClosed = !schedule || schedule.toLowerCase() === 'closed';
+
+    if (!isClosed && dateStr >= todayStr) {
+      const dayOfWeek = DAY_NAMES_SHORT[d.getUTCDay()];
+      const dayNum = d.getUTCDate();
+      const month = MONTH_NAMES[d.getUTCMonth()];
+      let label = `${dayOfWeek}, ${dayNum} ${month}`;
+
+      if (dateStr === todayStr) {
+        label = `Today (${dayOfWeek}, ${dayNum} ${month})`;
+      } else {
+        const tmrw = new Date(todayStr + 'T12:00:00Z');
+        tmrw.setUTCDate(tmrw.getUTCDate() + 1);
+        if (dateStr === tmrw.toISOString().split('T')[0]) {
+          label = `Tomorrow (${dayOfWeek}, ${dayNum} ${month})`;
+        }
+      }
+
+      // Check if there are available slots for this date
+      const slots = await scheduler.getAvailableSlots(tenantId, dateStr, serviceDuration);
+      const hasSlots = slots.length > 0;
+
+      if (hasSlots) {
+        options.push({ dateStr, label, dayOfWeek, dayNum, month, hasSlots: true });
+      } else {
+        unavailableDates.push({ dateStr, label, dayOfWeek, dayNum, month, hasSlots: false });
+      }
+    }
+
+    d.setUTCDate(d.getUTCDate() + 1);
+    daysChecked++;
+  }
+
+  return { available: options, unavailable: unavailableDates };
+}
+
+function formatDateCalendar(availableDates, unavailableDates = []) {
+  const lines = [];
+  let num = 1;
+  
+  // Show available dates with numbers
+  availableDates.forEach((opt) => {
+    lines.push(`${num}. ${opt.label}`);
+    num++;
+  });
+  
+  // Show unavailable dates with strikethrough, no number
+  unavailableDates.slice(0, 10).forEach((opt) => { // Limit to 10 unavailable dates
+    lines.push(`~${opt.label} - no slots available~`);
+  });
+  
+  return lines.join('\n');
+}
+
+async function handleGoBack(phone, session) {
+  const prevState = session.context.prev_state;
+  const ctx = session.context;
+
+  if (!prevState) {
+    return sendMessage(phone, 'You are at the first step. Type *CANCEL* to stop the booking.');
+  }
+
+  // Restore previous state and remove the "back" tracking
+  await sessionService.updateSession(phone, {
+    state: prevState,
+    context: { ...ctx, prev_state: null },
+  });
+
+  // Re-prompt based on previous state
+  switch (prevState) {
+    case 'awaiting_name': {
+      return sendMessage(
+        phone,
+        `Going back...\n\nWhat is your *name*?`
+      );
+    }
+    case 'awaiting_service': {
+      const services = await serviceModel.findByTenant(session.tenant_id);
+      const table = formatServiceTable(services);
+      return sendMessage(
+        phone,
+        `Going back...\n\nHi *${ctx.client_name}*! 👋\n\nPlease choose a service by typing the *NUMBER*:\n\n${table}\n\n_Type *BACK* to change your name_`
+      );
+    }
+    case 'awaiting_date': {
+      const tenant = await tenantModel.findById(session.tenant_id);
+      const serviceDuration = ctx.selected_service_duration || 60;
+      const { available, unavailable } = await buildDateOptions(tenant.working_hours, 25, session.tenant_id, serviceDuration);
+      const calendar = formatDateCalendar(available, unavailable);
+      
+      // Store only available dates for selection
+      const availableDateStrs = available.map(d => d.dateStr);
+      await sessionService.updateSession(phone, {
+        state: 'awaiting_date',
+        context: { 
+          ...ctx, 
+          date_options: availableDateStrs,
+          prev_state: 'awaiting_service',
+        },
+      });
+      
+      return sendMessage(
+        phone,
+        `Going back...\n\n📅 *Pick a date:*\n\n${calendar}\n\nReply with the *NUMBER* for available dates.\n_Type *BACK* to change your service_`
+      );
+    }
+    case 'awaiting_time': {
+      const slots = ctx.available_slots || [];
+      const slotLines = slots.map((slot, i) => `${i + 1}. ${slot}`);
+      return sendMessage(
+        phone,
+        `Going back...\n\n📅 Available slots on *${formatDateLong(ctx.selected_date)}*:\n\n${slotLines.join('\n')}\n\nType the *NUMBER* to select.\n_Type *BACK* to change your date_`
+      );
+    }
+    default:
+      return sendMessage(phone, 'Cannot go back further. Type *CANCEL* to stop.');
+  }
 }
 
 module.exports = {

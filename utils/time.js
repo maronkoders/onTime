@@ -71,14 +71,25 @@ function createUTCDateTime(dateStr, timeStr) {
   return new Date(d.getTime() - HARARE_OFFSET_HOURS * 60 * 60 * 1000);
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function formatDateLong(dateStr) {
+  // Input: '2026-04-08', Output: '08 April 2026'
+  const [year, month, day] = dateStr.split('-');
+  const monthName = MONTH_NAMES[parseInt(month, 10) - 1];
+  return `${day} ${monthName} ${year}`;
+}
+
 module.exports = {
   HARARE_OFFSET_HOURS,
+  MONTH_NAMES,
   nowHarare,
   todayHarare,
   toHarareTime,
   toUTC,
   formatTime,
   formatDate,
+  formatDateLong,
   formatDateTime,
   getDayOfWeek,
   parseTimeString,
