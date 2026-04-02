@@ -712,7 +712,7 @@ async function showHelp(phone, tenant) {
 ` +
       `Type *6 monday 08:00-18:00* to set hours
 ` +
-      `Type *8 42* to cancel appointment #42
+      `Type *8* to cancel appointment #42
 
 ` +
       `📎 Your booking link:\n${link}`

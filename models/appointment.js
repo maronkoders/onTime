@@ -109,9 +109,22 @@ async function getConfirmedForTenantOnDate(tenantId, dateStr) {
   return result.rows;
 }
 
+async function findByTenant(tenantId) {
+  const result = await db.query(
+    `SELECT a.*, s.name as service_name, s.duration_minutes, s.price
+     FROM appointments a
+     LEFT JOIN services s ON a.service_id = s.id
+     WHERE a.tenant_id = $1
+     ORDER BY a.start_time DESC`,
+    [tenantId]
+  );
+  return result.rows;
+}
+
 module.exports = {
   create,
   findById,
+  findByTenant,
   findByTenantAndDate,
   findUpcomingByTenant,
   findByClientPhone,
