@@ -47,7 +47,7 @@ async function handleClientMessage(phone, body, session) {
       `📋 *My appointment* — View your upcoming bookings\n` +
       `❌ *Cancel <id>* — Cancel a booking\n\n` +
       `*For Salon Owners:*\n` +
-      `Type *register* to set up your salon — you'll add your name, location, working hours, and services in just a few steps.\n\n` +
+      `Type *REGISTER* to set up your salon — you'll add your name, location, working hours, and services in just a few steps.\n\n` +
       `Get started now!`
   );
 }
@@ -68,6 +68,37 @@ async function startBooking(phone, bookingCode) {
     return sendMessage(phone, `*${tenant.name}* hasn't set up any services yet. Please try again later.`);
   }
 
+  // Check if client has previous appointments at this salon
+  const clientAppointments = await appointmentModel.findByClientPhone(phone);
+  const previousAppointments = clientAppointments.filter(a => a.tenant_id === tenant.id);
+  const isReturningClient = previousAppointments.length > 0;
+  
+  // Get client name from most recent appointment if returning
+  const clientName = isReturningClient ? previousAppointments[0].client_name : null;
+
+  if (isReturningClient && clientName) {
+    // Returning client - welcome them back and skip name step
+    const table = formatServiceTable(services);
+    
+    await sessionService.setSession(phone, {
+      role: 'client',
+      state: 'awaiting_service',
+      tenant_id: tenant.id,
+      context: {
+        booking_code: bookingCode,
+        salon_name: tenant.name,
+        client_name: clientName,
+        prev_state: 'awaiting_name',
+      },
+    });
+
+    return sendMessage(
+      phone,
+      `👋 *Welcome back, ${clientName}!* 💇\n\nGreat to see you again at *${tenant.name}*!\n\nPlease choose a service by typing the *NUMBER*:\n\n${table}\n\n_Type *BACK* to change your name_`
+    );
+  }
+
+  // New client - start with name step
   await sessionService.setSession(phone, {
     role: 'client',
     state: 'awaiting_name',

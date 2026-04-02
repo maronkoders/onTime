@@ -17,29 +17,72 @@ const DEFAULT_WORKING_HOURS = {
   sunday: 'closed',
 };
 
+const COMMAND_MAP = {
+  1: 'today',
+  2: 'appointments',
+  3: 'services',
+  4: 'add service',
+  5: 'remove service',
+  6: 'hours',
+  7: 'link',
+  8: 'cancel',
+  9: 'help',
+};
+
 async function handleAdminMessage(phone, body, session, tenant) {
-  const lowerBody = body.toLowerCase().trim();
+  // SECURITY: Verify the phone number matches the tenant owner
+  if (!tenant || tenant.owner_phone !== phone) {
+    // Not authenticated as salon owner - treat as client message
+    const { sendMessage } = require('../services/whatsapp');
+    return sendMessage(
+      phone,
+      `👋 Welcome to *OnTime* — your salon appointment assistant on WhatsApp!\n\n` +
+        `*For Clients:*\n` +
+        `📅 *Book* — Use the booking link from your salon to schedule an appointment\n` +
+        `📋 *My appointment* — View your upcoming bookings\n` +
+        `❌ *Cancel <id>* — Cancel a booking\n\n` +
+        `*For Salon Owners:*\n` +
+        `Type *REGISTER* to set up your salon.\n\n` +
+        `Get started now!`
+    );
+  }
+
+  let lowerBody = body.toLowerCase().trim();
 
   // Check if we're in a multi-step flow
   if (session && session.state) {
     return handleAdminState(phone, body, session, tenant);
   }
 
+  // Check if input is a number and map to command
+  const num = parseInt(body.trim(), 10);
+  if (!isNaN(num) && COMMAND_MAP[num]) {
+    lowerBody = COMMAND_MAP[num];
+  }
+
   // Command routing
-  if (lowerBody === 'services') {
+  if (lowerBody === 'today' || lowerBody === '1') {
+    return listToday(phone, tenant);
+  }
+
+  if (lowerBody === 'appointments' || lowerBody === '2') {
+    return listAppointments(phone, tenant);
+  }
+
+  if (lowerBody === 'services' || lowerBody === '3') {
     return listServices(phone, tenant);
   }
 
-  if (lowerBody === 'add service') {
+  if (lowerBody === 'add service' || lowerBody === '4') {
     return startAddService(phone, tenant);
   }
 
-  if (lowerBody.startsWith('remove service')) {
+  if (lowerBody.startsWith('remove service') || lowerBody === '5') {
     const arg = body.substring('remove service'.length).trim();
     return removeService(phone, tenant, arg);
   }
 
-  if (lowerBody === 'hours') {
+  if (lowerBody === 'hours' || lowerBody === '6') {
     return showHours(phone, tenant);
   }
 
@@ -48,37 +91,53 @@ async function handleAdminMessage(phone, body, session, tenant) {
     return updateHours(phone, tenant, arg);
   }
 
-  if (lowerBody === 'appointments') {
-    return listAppointments(phone, tenant);
+  if (lowerBody === 'link' || lowerBody === '7') {
+    const link = generateBookingLink(process.env.BOT_PHONE_NUMBER, tenant.booking_code);
+    return sendMessage(phone, `📎 Your booking link:\n${link}\n\nShare this with your clients so they can book appointments!`);
   }
 
-  if (lowerBody === 'today') {
-    return listToday(phone, tenant);
-  }
-
-  if (lowerBody.startsWith('cancel ')) {
-    const idStr = body.substring('cancel'.length).trim();
+  if (lowerBody.startsWith('cancel ') || lowerBody === '8') {
+    const idStr = lowerBody === '8' ? '' : body.substring('cancel'.length).trim();
+    if (lowerBody === '8' || !idStr) {
+      return sendMessage(phone, 'Please provide an appointment ID.\nUsage: Type *CANCEL <id>* (e.g., CANCEL 42) or just the number with ID like *8 42*');
+    }
     return cancelAppointment(phone, tenant, idStr);
   }
 
   if (lowerBody === 'reset') {
     await sessionService.clearSession(phone);
-    return sendMessage(phone, 'Session reset. Type *help* to see available commands.');
+    return sendMessage(phone, 'Session reset. Type *HELP* or *9* to see available commands.');
   }
 
-  if (lowerBody === 'help') {
+  if (lowerBody === 'help' || lowerBody === '9') {
     return showHelp(phone, tenant);
-  }
-
-  if (lowerBody === 'link') {
-    const link = generateBookingLink(process.env.BOT_PHONE_NUMBER, tenant.booking_code);
-    return sendMessage(phone, `📎 Your booking link:\n${link}\n\nShare this with your clients so they can book appointments!`);
   }
 
   // Unknown command
   return sendMessage(
     phone,
-    `I didn't understand that command. Type *help* to see available commands.`
+    `❓ I didn't understand that command.
+
+` +
+      `*Quick commands (type the NUMBER):*
+` +
+      `1️⃣ *TODAY* - Today's appointments
+` +
+      `2️⃣ *APPOINTMENTS* - Upcoming appointments
+` +
+      `3️⃣ *SERVICES* - List services
+` +
+      `4️⃣ *ADD SERVICE* - Add a service
+` +
+      `5️⃣ *REMOVE SERVICE <id>* - Remove service
+` +
+      `6️⃣ *HOURS* - View/set hours
+` +
+      `7️⃣ *LINK* - Get booking link
+` +
+      `8️⃣ *CANCEL <id>* - Cancel appointment
+` +
+      `9️⃣ *HELP* - Show all commands`
   );
 }
 
@@ -114,6 +173,12 @@ async function startRegistration(phone) {
 
 async function handleRegistrationState(phone, body, session) {
   const state = session.state;
+  const lowerBody = body.trim().toLowerCase();
+
+  // Handle 'back' command to go to previous step
+  if (lowerBody === 'back') {
+    return handleRegistrationGoBack(phone, session);
+  }
 
   switch (state) {
     case 'awaiting_salon_name':
@@ -132,34 +197,34 @@ async function handleRegistrationState(phone, body, session) {
       return handleMoreServices(phone, body, session);
     default:
       await sessionService.clearSession(phone);
-      return sendMessage(phone, 'Something went wrong during registration. Please type *register* to start again.');
+      return sendMessage(phone, 'Something went wrong during registration. Please type *REGISTER* to start again.');
   }
 }
 
 async function handleSalonName(phone, body, session) {
   const name = body.trim();
   if (name.length < 2) {
-    return sendMessage(phone, 'Please provide a valid salon name (at least 2 characters).');
+    return sendMessage(phone, 'Please provide a valid salon name (at least 2 characters).\n_Type *BACK* to cancel_');
   }
   await sessionService.updateSession(phone, {
     state: 'awaiting_location',
-    context: { salon_name: name },
+    context: { salon_name: name, prev_state: 'awaiting_salon_name' },
   });
-  return sendMessage(phone, `Great! *${name}* it is.\n\nNow, what is your *location*? (e.g., "123 Main St, Harare")`);
+  return sendMessage(phone, `Great! *${name}* it is.\n\nNow, what is your *location*? (e.g., "123 Main St, Harare")\n_Type *BACK* to change your salon name_`);
 }
 
 async function handleLocation(phone, body, session) {
   const location = body.trim();
   if (location.length < 3) {
-    return sendMessage(phone, 'Please provide a valid location.');
+    return sendMessage(phone, 'Please provide a valid location.\n_Type *BACK* to change your salon name_');
   }
   await sessionService.updateSession(phone, {
     state: 'awaiting_working_hours',
-    context: { location },
+    context: { ...session.context, location, prev_state: 'awaiting_location' },
   });
   return sendMessage(
     phone,
-    `📍 Location set!\n\nNow set your *working hours*. You can:\n\n1️⃣ Type *default* to use:\nMon-Sat: 09:00-17:00, Sun: closed\n\n2️⃣ Or type custom hours like:\nmon-fri 08:00-18:00, sat 09:00-14:00, sun closed`
+    `📍 Location set!\n\nNow set your *working hours*. You can:\n\n1️⃣ Type *DEFAULT* to use:\nMon-Sat: 09:00-17:00, Sun: closed\n\n2️⃣ Or type custom hours like:\nmon-fri 08:00-18:00, sat 09:00-14:00, sun closed\n_Type *BACK* to change your location_`
   );
 }
 
@@ -174,43 +239,43 @@ async function handleWorkingHours(phone, body, session) {
     if (!workingHours) {
       return sendMessage(
         phone,
-        'Invalid format. Try:\n*default* - for standard hours\nOr: *mon-fri 08:00-18:00, sat 09:00-14:00, sun closed*'
+        'Invalid format. Try:\n*DEFAULT* - for standard hours\nOr: *mon-fri 08:00-18:00, sat 09:00-14:00, sun closed*\n_Type *BACK* to change your location_'
       );
     }
   }
 
   await sessionService.updateSession(phone, {
     state: 'awaiting_first_service_name',
-    context: { working_hours: workingHours },
+    context: { ...session.context, working_hours: workingHours, prev_state: 'awaiting_working_hours' },
   });
   return sendMessage(
     phone,
-    `⏰ Working hours set!\n\nNow let's add your first *service*. What is the service name? (e.g., "Haircut")`
+    `⏰ Working hours set!\n\nNow let's add your first *service*. What is the service name? (e.g., "Haircut")\n_Type *BACK* to change your working hours_`
   );
 }
 
 async function handleFirstServiceName(phone, body, session) {
   const name = body.trim();
   if (name.length < 2) {
-    return sendMessage(phone, 'Please provide a valid service name.');
+    return sendMessage(phone, 'Please provide a valid service name.\n_Type *BACK* to change your working hours_');
   }
   await sessionService.updateSession(phone, {
     state: 'awaiting_first_service_duration',
-    context: { temp_service_name: name },
+    context: { ...session.context, temp_service_name: name, prev_state: 'awaiting_first_service_name' },
   });
-  return sendMessage(phone, `How long does *${name}* take? (in minutes, e.g., "30")`);
+  return sendMessage(phone, `How long does *${name}* take? (in minutes, e.g., "30")\n_Type *BACK* to change the service name_`);
 }
 
 async function handleFirstServiceDuration(phone, body, session) {
   const duration = parseInt(body.trim(), 10);
   if (isNaN(duration) || duration < 5 || duration > 480) {
-    return sendMessage(phone, 'Please provide a valid duration in minutes (5-480).');
+    return sendMessage(phone, 'Please provide a valid duration in minutes (5-480).\n_Type *BACK* to change the service name_');
   }
   await sessionService.updateSession(phone, {
     state: 'awaiting_first_service_price',
-    context: { temp_service_duration: duration },
+    context: { ...session.context, temp_service_duration: duration, prev_state: 'awaiting_first_service_duration' },
   });
-  return sendMessage(phone, `What is the price for *${session.context.temp_service_name}*? (e.g., "15.00")`);
+  return sendMessage(phone, `What is the price for *${session.context.temp_service_name}*? (e.g., "15.00")\n_Type *BACK* to change the duration_`);
 }
 
 async function handleFirstServicePrice(phone, body, session) {
@@ -251,12 +316,17 @@ async function handleFirstServicePrice(phone, body, session) {
 
     return sendMessage(
       phone,
-      `✅ *${tenant.name}* has been registered!\n\n` +
+      `✅ *Registration Complete!*\n\n` +
+        `👔 You are now the verified owner of *${tenant.name}*!\n\n` +
         `📍 Location: ${tenant.location}\n` +
         `🔗 Booking Code: *${bookingCode}*\n` +
         `📎 Booking Link:\n${bookingLink}\n\n` +
         `First service added: *${ctx.temp_service_name}* (${ctx.temp_service_duration} min, ${formatCurrency(price)})\n\n` +
-        `Would you like to add another service? Type the service name or type *done* to finish setup.`
+        `*As the salon owner, you can now:*\n` +
+        `• View appointments (type *1* or *TODAY*)\n` +
+        `• Add/remove services (type *4* or *ADD SERVICE*)\n` +
+        `• Manage working hours (type *6* or *HOURS*)\n\n` +
+        `Would you like to add another service? Type the service name or type *DONE* to finish setup.`
     );
   } catch (err) {
     logger.error(`Registration error: ${err.message}`);
@@ -333,7 +403,58 @@ async function handleRegServicePrice(phone, body, session) {
   );
 }
 
-// Extend the state handler for registration sub-states
+async function handleRegistrationGoBack(phone, session) {
+  const prevState = session.context.prev_state;
+
+  if (!prevState) {
+    return sendMessage(phone, 'You are at the first step. Type *CANCEL* to stop the registration.');
+  }
+
+  // Restore previous state and remove the "back" tracking
+  await sessionService.updateSession(phone, {
+    state: prevState,
+    context: { ...session.context, prev_state: null },
+  });
+
+  // Re-prompt based on previous state
+  switch (prevState) {
+    case 'awaiting_salon_name': {
+      return sendMessage(
+        phone,
+        `Going back...\n\n🎉 Let's set up your salon. What is your *salon name*?`
+      );
+    }
+    case 'awaiting_location': {
+      const salonName = session.context.salon_name || 'your salon';
+      return sendMessage(
+        phone,
+        `Going back...\n\nGreat! *${salonName}* it is.\n\nNow, what is your *location*? (e.g., "123 Main St, Harare")\n_Type *BACK* to change your salon name_`
+      );
+    }
+    case 'awaiting_working_hours': {
+      return sendMessage(
+        phone,
+        `Going back...\n\n📍 Location set!\n\nNow set your *working hours*. You can:\n\n1️⃣ Type *DEFAULT* to use:\nMon-Sat: 09:00-17:00, Sun: closed\n\n2️⃣ Or type custom hours like:\nmon-fri 08:00-18:00, sat 09:00-14:00, sun closed\n_Type *BACK* to change your location_`
+      );
+    }
+    case 'awaiting_first_service_name': {
+      return sendMessage(
+        phone,
+        `Going back...\n\n⏰ Working hours set!\n\nNow let's add your first *service*. What is the service name? (e.g., "Haircut")\n_Type *BACK* to change your working hours_`
+      );
+    }
+    case 'awaiting_first_service_duration': {
+      const serviceName = session.context.temp_service_name || 'this service';
+      return sendMessage(
+        phone,
+        `Going back...\n\nHow long does *${serviceName}* take? (in minutes, e.g., "30")\n_Type *BACK* to change the service name_`
+      );
+    }
+    default:
+      return sendMessage(phone, 'Cannot go back further. Type *CANCEL* to stop the registration.');
+  }
+}
+
 async function handleRegistrationSubState(phone, body, session) {
   switch (session.state) {
     case 'awaiting_reg_service_duration':
@@ -563,17 +684,37 @@ async function showHelp(phone, tenant) {
   const link = generateBookingLink(process.env.BOT_PHONE_NUMBER, tenant.booking_code);
   return sendMessage(
     phone,
-    `📖 *OnTime Commands*\n\n` +
-      `*services* - List your services\n` +
-      `*add service* - Add a new service\n` +
-      `*remove service <id or name>* - Remove a service\n` +
-      `*hours* - View working hours\n` +
-      `*hours <day> <time>* - Update hours (e.g., hours monday 08:00-18:00)\n` +
-      `*appointments* - View upcoming appointments (7 days)\n` +
-      `*today* - View today's appointments\n` +
-      `*cancel <id>* - Cancel an appointment\n` +
-      `*link* - Get your booking link\n` +
-      `*reset* - Reset your session\n\n` +
+    `📖 *OnTime Commands*
+
+` +
+      `*Quick commands (type the NUMBER):*
+` +
+      `1️⃣ *TODAY* - Today's appointments
+` +
+      `2️⃣ *APPOINTMENTS* - Upcoming appointments (7 days)
+` +
+      `3️⃣ *SERVICES* - List your services
+` +
+      `4️⃣ *ADD SERVICE* - Add a new service
+` +
+      `5️⃣ *REMOVE SERVICE <id>* - Remove a service
+` +
+      `6️⃣ *HOURS* - View working hours / set hours
+` +
+      `7️⃣ *LINK* - Get your booking link
+` +
+      `8️⃣ *CANCEL <id>* - Cancel an appointment
+` +
+      `9️⃣ *HELP* - Show this menu
+
+` +
+      `*Examples:*
+` +
+      `Type *6 monday 08:00-18:00* to set hours
+` +
+      `Type *8 42* to cancel appointment #42
+
+` +
       `📎 Your booking link:\n${link}`
   );
 }
