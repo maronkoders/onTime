@@ -141,8 +141,8 @@ async function findUpcomingByClientPhone(clientPhone) {
 async function reschedule(appointmentId, { newDate, newStartTime, newEndTime }) {
   const result = await db.query(
     `UPDATE appointments 
-     SET start_time = $1, end_time = $2, updated_at = NOW()
-     WHERE id = $3 AND status = 'confirmed'
+     SET start_time = $1, end_time = $2, updated_at = NOW(), reschedule_count = COALESCE(reschedule_count, 0) + 1
+     WHERE id = $3 AND status = 'confirmed' AND COALESCE(reschedule_count, 0) < 3
      RETURNING *`,
     [newStartTime, newEndTime, appointmentId]
   );

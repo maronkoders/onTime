@@ -35,6 +35,11 @@ const migrations = [
     name: 'Clients Table',
     file: 'migration_clients.sql',
     description: 'Creates clients table for returning client recognition'
+  },
+  {
+    name: 'Reschedule Count',
+    file: 'migration_reschedule_count.sql',
+    description: 'Adds reschedule_count column to appointments table'
   }
 ];
 

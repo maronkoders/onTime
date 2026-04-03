@@ -813,6 +813,23 @@ async function startReschedule(phone) {
     return sendMessage(phone, '❌ You have no upcoming appointments to reschedule.');
   }
   
+  // Check reschedule limit (max 3 times)
+  const rescheduleCount = upcoming.reschedule_count || 0;
+  const remainingReschedules = 3 - rescheduleCount;
+  
+  if (remainingReschedules <= 0) {
+    return sendMessage(
+      phone,
+      `❌ *Reschedule Limit Reached*\n\n` +
+      `This appointment has already been rescheduled 3 times.\n` +
+      `You cannot reschedule anymore.\n\n` +
+      `*Options:*\n` +
+      `1️⃣ Keep your current appointment\n` +
+      `2️⃣ Cancel this appointment and book a new one\n\n` +
+      `Type *CANCEL ${upcoming.id}* to cancel if needed.`
+    );
+  }
+  
   const hTime = toHarareTime(upcoming.start_time);
   const dateStr = hTime.toISOString().split('T')[0];
   const timeStr = formatTime(hTime);
@@ -854,7 +871,8 @@ async function startReschedule(phone) {
   return sendMessage(
     phone,
     `📅 *Reschedule Appointment*\n\n` +
-    `Current: ${upcoming.service_name} on ${formatDateLong(dateStr)} at ${timeStr}\n\n` +
+    `Current: ${upcoming.service_name} on ${formatDateLong(dateStr)} at ${timeStr}\n` +
+    `Reschedules used: ${rescheduleCount}/3\n\n` +
     `Select a new date:\n${calendar}\n\n` +
     `Reply with the *NUMBER* for available dates.`
   );
@@ -1043,10 +1061,13 @@ async function handleRescheduleConfirm(phone, body, session) {
     // Notify salon owner
     const tenant = await tenantModel.findById(session.tenant_id);
     if (tenant) {
+      const cleanPhone = phone.replace(/^\+/, '');
+      const waLink = `https://wa.me/${cleanPhone}`;
       sendMessage(
         tenant.owner_phone,
         `🔄 *Appointment Rescheduled*\n\n` +
         `Client: ${ctx.client_name}\n` +
+        `📱 WhatsApp: ${waLink}\n` +
         `Service: ${ctx.selected_service_name}\n` +
         `New Date: ${formatDateLong(ctx.selected_date)}\n` +
         `New Time: ${ctx.selected_time}\n` +
