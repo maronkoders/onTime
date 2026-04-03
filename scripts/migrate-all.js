@@ -30,6 +30,11 @@ const migrations = [
     name: 'Revenue Records',
     file: 'migration_revenue_records.sql',
     description: 'Creates revenue_records table for tracking revenue'
+  },
+  {
+    name: 'Clients Table',
+    file: 'migration_clients.sql',
+    description: 'Creates clients table for returning client recognition'
   }
 ];
 

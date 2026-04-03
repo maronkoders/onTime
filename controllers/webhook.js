@@ -1,4 +1,6 @@
 const tenantModel = require('../models/tenant');
+const clientModel = require('../models/client');
+const appointmentModel = require('../models/appointment');
 const sessionService = require('../services/session');
 const adminController = require('./admin');
 const clientController = require('./client');
@@ -105,7 +107,30 @@ async function routeMessage(phone, body) {
     return adminController.handleAdminMessage(phone, body, null, tenant);
   }
 
-  // Default: client flow (no active booking)
+  // Check if this is a returning client
+  const existingClient = await clientModel.findByPhone(phone);
+  if (existingClient) {
+    // Check if they have any upcoming appointments
+    const upcomingAppointments = await appointmentModel.findUpcomingByClientPhone(phone);
+    const hasUpcoming = upcomingAppointments.length > 0;
+    
+    // Create session for returning client
+    await sessionService.setSession(phone, {
+      role: 'client',
+      state: 'menu',
+      tenant_id: existingClient.preferred_tenant_id,
+      context: {
+        client_name: existingClient.name,
+        returning_client: true,
+        has_upcoming_appointment: hasUpcoming,
+        upcoming_appointment: hasUpcoming ? upcomingAppointments[0] : null,
+      },
+    });
+    
+    return clientController.showReturningClientMenu(phone, existingClient, hasUpcoming, upcomingAppointments[0]);
+  }
+
+  // Default: new client flow
   return clientController.handleClientMessage(phone, body, session);
 }
 

@@ -1,6 +1,7 @@
 const tenantModel = require('../models/tenant');
 const serviceModel = require('../models/service');
 const appointmentModel = require('../models/appointment');
+const clientModel = require('../models/client');
 const sessionService = require('../services/session');
 const scheduler = require('../services/scheduler');
 const { sendMessage } = require('../services/whatsapp');
@@ -32,6 +33,21 @@ async function handleClientMessage(phone, body, session) {
     const idStr = body.substring('cancel'.length).trim();
     return cancelClientAppointment(phone, idStr);
   }
+  
+  // Check for reschedule command
+  if (lowerBody === 'reschedule') {
+    return startReschedule(phone);
+  }
+
+  // If in menu state (returning client), handle menu selection
+  if (session && session.state === 'menu') {
+    return handleReturningClientMenu(phone, body, session);
+  }
+
+  // If in reschedule flow
+  if (session && session.state && session.state.startsWith('reschedule_')) {
+    return handleRescheduleState(phone, body, session);
+  }
 
   // If in a booking flow, handle the state
   if (session && session.state) {
@@ -55,7 +71,7 @@ async function handleClientMessage(phone, body, session) {
 async function startBooking(phone, bookingCode) {
   const tenant = await tenantModel.findByBookingCode(bookingCode);
   if (!tenant) {
-    return sendMessage(phone, `Sorry, no salon found with code "${bookingCode}". Please check the link and try again.`);
+    return sendMessage(phone, `❌ Sorry, no salon found with code "${bookingCode}". Please check the link and try again.`);
   }
 
   // Check if salon subscription is active
@@ -85,15 +101,50 @@ async function startBooking(phone, bookingCode) {
 
   // Check if this phone is the salon owner
   if (phone === tenant.owner_phone) {
-    return sendMessage(phone, `You can't book an appointment at your own salon! Use *today* or *appointments* to manage your schedule.`);
+    return sendMessage(phone, `❌ You can't book an appointment at your own salon! Use *today* or *appointments* to manage your schedule.`);
   }
 
   const services = await serviceModel.findByTenant(tenant.id);
   if (services.length === 0) {
-    return sendMessage(phone, `*${tenant.name}* hasn't set up any services yet. Please try again later.`);
+    return sendMessage(phone, `❌ *${tenant.name}* hasn't set up any services yet. Please try again later.`);
   }
 
-  // Check if client has previous appointments at this salon
+  // Check if client already has an upcoming appointment at ANY salon
+  const existingAppointment = await appointmentModel.findUpcomingByClientPhone(phone);
+  if (existingAppointment) {
+    const hTime = toHarareTime(existingAppointment.start_time);
+    const dateStr = hTime.toISOString().split('T')[0];
+    const timeStr = formatTime(hTime);
+    
+    let message = `❌ *You already have an upcoming appointment!*\n\n`;
+    message += `📋 *Existing Appointment:*\n`;
+    message += `   💇 ${existingAppointment.service_name}\n`;
+    message += `   🏪 ${existingAppointment.salon_name}\n`;
+    message += `   📅 ${formatDateLong(dateStr)} at ${timeStr}\n\n`;
+    message += `You can only have one active appointment at a time.\n\n`;
+    message += `*Options:*\n`;
+    message += `1️⃣ *RESCHEDULE* - Change your appointment date/time\n`;
+    message += `2️⃣ *CANCEL* - Cancel your current appointment\n`;
+    message += `3️⃣ *SEE MY APPOINTMENT* - View details\n\n`;
+    message += `Type the number or command to proceed.`;
+    
+    // Set menu state so they can use the options
+    await sessionService.setSession(phone, {
+      role: 'client',
+      state: 'menu',
+      tenant_id: existingAppointment.tenant_id,
+      context: {
+        client_name: existingAppointment.client_name,
+        returning_client: true,
+        has_upcoming_appointment: true,
+        upcoming_appointment: existingAppointment,
+      },
+    });
+    
+    return sendMessage(phone, message);
+  }
+
+  // Check if this is a returning client (has previous appointments at this salon)
   const clientAppointments = await appointmentModel.findByClientPhone(phone);
   const previousAppointments = clientAppointments.filter(a => a.tenant_id === tenant.id);
   const isReturningClient = previousAppointments.length > 0;
@@ -386,6 +437,9 @@ async function handleConfirmation(phone, body, session) {
       endTime: endTimeUTC.toISOString(),
     });
 
+    // Save/update client record for returning client recognition
+    await clientModel.getOrCreate(phone, ctx.client_name, session.tenant_id);
+
     await sessionService.clearSession(phone);
 
     // Notify the salon owner
@@ -421,6 +475,19 @@ async function handleConfirmation(phone, body, session) {
       ).catch((err) => logger.error(`Failed to notify salon owner: ${err.message}`));
     }
 
+    // Set menu state for returning client
+    await sessionService.setSession(phone, {
+      role: 'client',
+      state: 'menu',
+      tenant_id: session.tenant_id,
+      context: {
+        client_name: ctx.client_name,
+        returning_client: true,
+        has_upcoming_appointment: true,
+        upcoming_appointment: appointment,
+      },
+    });
+
     return sendMessage(
       phone,
       `✅ *Booking Confirmed!*\n\n` +
@@ -428,7 +495,10 @@ async function handleConfirmation(phone, body, session) {
         `💇 ${ctx.selected_service_name}\n` +
         `📅 ${formatDateLong(ctx.selected_date)} at ${ctx.selected_time}\n` +
         `🆔 Appointment #${appointment.id}\n\n` +
-        `Type *MY APPOINTMENT* to view your booking details.\n` +
+        `*What's next?*\n` +
+        `1️⃣ Type *MY APPOINTMENT* to view details\n` +
+        `2️⃣ Type *RESCHEDULE* to change date/time\n` +
+        `3️⃣ Type *HELP* for all options\n\n` +
         `Thank you! See you then! 🎉`
     );
   } catch (err) {
@@ -618,7 +688,387 @@ async function handleGoBack(phone, session) {
   }
 }
 
+// --- Returning Client Menu ---
+
+async function showReturningClientMenu(phone, client, hasUpcoming, upcomingAppt) {
+  let message = `👋 *Welcome back, ${client.name}!* 🎉\n\n`;
+  
+  if (hasUpcoming && upcomingAppt) {
+    const hTime = toHarareTime(upcomingAppt.start_time);
+    const dateStr = hTime.toISOString().split('T')[0];
+    const timeStr = formatTime(hTime);
+    
+    message += `📋 *You have an upcoming appointment:*\n`;
+    message += `   💇 ${upcomingAppt.service_name}\n`;
+    message += `   🏪 ${upcomingAppt.salon_name}\n`;
+    message += `   📅 ${formatDateLong(dateStr)} at ${timeStr}\n\n`;
+    message += `*What would you like to do?*\n\n`;
+    message += `1️⃣ *See my appointment* - View details\n`;
+    message += `2️⃣ *Reschedule* - Change date/time\n`;
+    message += `3️⃣ *Cancel* - Cancel booking\n`;
+    message += `4️⃣ *Book another* - New appointment with ${upcomingAppt.salon_name}\n`;
+  } else {
+    message += `You have no upcoming appointments.\n\n`;
+    message += `*What would you like to do?*\n\n`;
+    
+    if (client.preferred_tenant_id) {
+      const tenant = await tenantModel.findById(client.preferred_tenant_id);
+      if (tenant) {
+        message += `1️⃣ *Book appointment* with ${tenant.name}\n`;
+        message += `   (Code: ${tenant.booking_code})\n\n`;
+      }
+    }
+    
+    message += `Type a salon's booking code to book with them.\n`;
+  }
+  
+  message += `\n_Type *HELP* for more options_`;
+  
+  return sendMessage(phone, message);
+}
+
+async function handleReturningClientMenu(phone, body, session) {
+  const input = body.trim().toLowerCase();
+  const ctx = session.context;
+  
+  // Option 1: See my appointment
+  if (input === '1' || input === 'see my appointment' || input === 'my appointment') {
+    return showClientAppointments(phone);
+  }
+  
+  // Option 2: Reschedule
+  if (input === '2' || input === 'reschedule') {
+    return startReschedule(phone);
+  }
+  
+  // Option 3: Cancel
+  if (input === '3' || input === 'cancel') {
+    // Get upcoming appointment to suggest cancelling
+    const upcoming = await appointmentModel.findUpcomingByClientPhone(phone);
+    if (upcoming) {
+      return cancelClientAppointment(phone, upcoming.id.toString());
+    }
+    return sendMessage(phone, '❌ No upcoming appointment to cancel.');
+  }
+  
+  // Option 4: Book another / Book appointment
+  if (input === '4' || input === 'book another' || input === 'book appointment') {
+    if (session.tenant_id) {
+      const tenant = await tenantModel.findById(session.tenant_id);
+      if (tenant) {
+        return startBooking(phone, tenant.booking_code);
+      }
+    }
+    return sendMessage(phone, 'Please provide a booking code to book an appointment.\nExample: *BOOK ABC123*');
+  }
+  
+  // Handle booking code input
+  if (input.startsWith('book ')) {
+    const code = body.substring(5).trim();
+    if (code) {
+      return startBooking(phone, code);
+    }
+  }
+  
+  // Help
+  if (input === 'help') {
+    return sendMessage(
+      phone,
+      `📖 *OnTime Client Help*\n\n` +
+      `*Commands:*\n` +
+      `• *1* or *See my appointment* - View upcoming appointment\n` +
+      `• *2* or *Reschedule* - Change your appointment date/time\n` +
+      `• *3* or *Cancel* - Cancel your appointment\n` +
+      `• *4* or *Book another* - Book new appointment\n` +
+      `• *BOOK <code>* - Book with a different salon\n\n` +
+      `You can also type the number (1, 2, 3, or 4) to select an option.`
+    );
+  }
+  
+  // Invalid input
+  return sendMessage(phone, '❌ Invalid option. Please type a number (1-4) or *HELP* for options.');
+}
+
+// --- Rescheduling ---
+
+async function startReschedule(phone) {
+  // Check if client has an upcoming appointment
+  const upcoming = await appointmentModel.findUpcomingByClientPhone(phone);
+  
+  if (!upcoming) {
+    return sendMessage(phone, '❌ You have no upcoming appointments to reschedule.');
+  }
+  
+  const hTime = toHarareTime(upcoming.start_time);
+  const dateStr = hTime.toISOString().split('T')[0];
+  const timeStr = formatTime(hTime);
+  
+  // Get tenant info for building date options
+  const tenant = await tenantModel.findById(upcoming.tenant_id);
+  if (!tenant) {
+    return sendMessage(phone, '❌ Unable to reschedule. Salon not found.');
+  }
+  
+  // Build date options
+  const { available, unavailable } = await buildDateOptions(
+    tenant.working_hours,
+    25,
+    upcoming.tenant_id,
+    upcoming.duration_minutes
+  );
+  
+  const calendar = formatDateCalendar(available, unavailable);
+  
+  // Set session for rescheduling
+  await sessionService.setSession(phone, {
+    role: 'client',
+    state: 'reschedule_date',
+    tenant_id: upcoming.tenant_id,
+    context: {
+      reschedule_appointment_id: upcoming.id,
+      client_name: upcoming.client_name,
+      selected_service_id: upcoming.service_id,
+      selected_service_name: upcoming.service_name,
+      selected_service_duration: upcoming.duration_minutes,
+      selected_service_price: upcoming.price,
+      current_date: dateStr,
+      current_time: timeStr,
+      date_options: available.map(d => d.dateStr),
+    },
+  });
+  
+  return sendMessage(
+    phone,
+    `📅 *Reschedule Appointment*\n\n` +
+    `Current: ${upcoming.service_name} on ${formatDateLong(dateStr)} at ${timeStr}\n\n` +
+    `Select a new date:\n${calendar}\n\n` +
+    `Reply with the *NUMBER* for available dates.`
+  );
+}
+
+async function handleRescheduleState(phone, body, session) {
+  const state = session.state;
+  const lowerBody = body.trim().toLowerCase();
+  
+  if (lowerBody === 'back' || lowerBody === 'cancel') {
+    await sessionService.clearSession(phone);
+    
+    // Get client info to show menu again
+    const client = await clientModel.findByPhone(phone);
+    if (client) {
+      const upcoming = await appointmentModel.findUpcomingByClientPhone(phone);
+      return showReturningClientMenu(phone, client, !!upcoming, upcoming);
+    }
+    return sendMessage(phone, 'Rescheduling cancelled. Type *HELP* for options.');
+  }
+  
+  switch (state) {
+    case 'reschedule_date':
+      return handleRescheduleDate(phone, body, session);
+    case 'reschedule_time':
+      return handleRescheduleTime(phone, body, session);
+    case 'reschedule_confirm':
+      return handleRescheduleConfirm(phone, body, session);
+    default:
+      await sessionService.clearSession(phone);
+      return sendMessage(phone, 'Something went wrong. Please try again.');
+  }
+}
+
+async function handleRescheduleDate(phone, body, session) {
+  let dateStr = body.trim().toLowerCase();
+  const dateOptions = session.context.date_options || [];
+  
+  // Handle numbered selection from calendar
+  const num = parseInt(dateStr, 10);
+  if (!isNaN(num) && num >= 1 && num <= dateOptions.length) {
+    dateStr = dateOptions[num - 1];
+  }
+  
+  if (!isValidDate(dateStr)) {
+    const invalidNum = parseInt(body.trim(), 10);
+    const errorMsg = isNaN(invalidNum)
+      ? '❌ Invalid input. Please pick a number from the list.'
+      : `❌ Entered number not valid (${invalidNum}). Please pick a number from the list.`;
+    return sendMessage(phone, errorMsg);
+  }
+  
+  if (isDateInPast(dateStr)) {
+    return sendMessage(phone, '❌ That date is in the past. Please choose a future date.');
+  }
+  
+  // Check if salon is open on that day
+  const tenant = await tenantModel.findById(session.tenant_id);
+  const dayName = getDayOfWeek(dateStr);
+  const daySchedule = tenant.working_hours[dayName];
+  
+  if (!daySchedule || daySchedule.toLowerCase() === 'closed') {
+    return sendMessage(
+      phone,
+      `❌ Sorry, *${tenant.name}* is closed on *${dayName.charAt(0).toUpperCase() + dayName.slice(1)}*.\nPlease choose another date.`
+    );
+  }
+  
+  // Get available slots
+  const slots = await scheduler.getAvailableSlots(
+    session.tenant_id,
+    dateStr,
+    session.context.selected_service_duration
+  );
+  
+  if (slots.length === 0) {
+    return sendMessage(
+      phone,
+      `❌ No available time slots on *${dateStr}*. Please try another date.`
+    );
+  }
+  
+  // Format slots as vertical numbered list
+  const slotLines = slots.map((slot, i) => `${i + 1}. ${slot}`);
+  
+  await sessionService.updateSession(phone, {
+    state: 'reschedule_time',
+    context: {
+      ...session.context,
+      selected_date: dateStr,
+      available_slots: slots,
+    },
+  });
+  
+  return sendMessage(
+    phone,
+    `📅 Available slots on *${formatDateLong(dateStr)}* (${dayName}):\n\n${slotLines.join('\n')}\n\nType the *NUMBER* to select.\n_Type *BACK* to change date_`
+  );
+}
+
+async function handleRescheduleTime(phone, body, session) {
+  const input = body.trim();
+  const slots = session.context.available_slots || [];
+  
+  const num = parseInt(input, 10);
+  
+  if (isNaN(num) || num < 1 || num > slots.length) {
+    return sendMessage(
+      phone,
+      `❌ Please select a valid time slot. Type a number from 1 to ${slots.length}.`
+    );
+  }
+  
+  const selectedTime = slots[num - 1];
+  const formattedDate = formatDateLong(session.context.selected_date);
+  const ctx = session.context;
+  
+  await sessionService.updateSession(phone, {
+    state: 'reschedule_confirm',
+    context: {
+      ...ctx,
+      selected_time: selectedTime,
+    },
+  });
+  
+  return sendMessage(
+    phone,
+    `📋 *Reschedule Summary*\n\n` +
+    `Service: *${ctx.selected_service_name}*\n` +
+    `New Date: *${formattedDate}*\n` +
+    `New Time: *${selectedTime}*\n\n` +
+    `Type *YES* to confirm the reschedule, *NO* to cancel.`
+  );
+}
+
+async function handleRescheduleConfirm(phone, body, session) {
+  const input = body.trim().toLowerCase();
+  
+  if (input === 'no' || input === 'cancel') {
+    await sessionService.clearSession(phone);
+    
+    // Show menu again
+    const client = await clientModel.findByPhone(phone);
+    if (client) {
+      const upcoming = await appointmentModel.findUpcomingByClientPhone(phone);
+      return showReturningClientMenu(phone, client, !!upcoming, upcoming);
+    }
+    return sendMessage(phone, 'Rescheduling cancelled.');
+  }
+  
+  if (input !== 'yes' && input !== 'confirm' && input !== 'y') {
+    return sendMessage(phone, '❌ Please type *YES* to confirm or *NO* to cancel.');
+  }
+  
+  const ctx = session.context;
+  
+  try {
+    // Calculate new times
+    const newStartTimeUTC = createUTCDateTime(ctx.selected_date, ctx.selected_time);
+    const newEndTimeUTC = new Date(newStartTimeUTC.getTime() + ctx.selected_service_duration * 60 * 1000);
+    
+    // Update the appointment
+    const updated = await appointmentModel.reschedule(ctx.reschedule_appointment_id, {
+      newDate: ctx.selected_date,
+      newStartTime: newStartTimeUTC.toISOString(),
+      newEndTime: newEndTimeUTC.toISOString(),
+    });
+    
+    if (!updated) {
+      return sendMessage(phone, '❌ Unable to reschedule. The appointment may have been cancelled.');
+    }
+    
+    await sessionService.clearSession(phone);
+    
+    // Notify salon owner
+    const tenant = await tenantModel.findById(session.tenant_id);
+    if (tenant) {
+      sendMessage(
+        tenant.owner_phone,
+        `🔄 *Appointment Rescheduled*\n\n` +
+        `Client: ${ctx.client_name}\n` +
+        `Service: ${ctx.selected_service_name}\n` +
+        `New Date: ${formatDateLong(ctx.selected_date)}\n` +
+        `New Time: ${ctx.selected_time}\n` +
+        `Appointment ID: #${ctx.reschedule_appointment_id}`
+      ).catch((err) => logger.error(`Failed to notify salon of reschedule: ${err.message}`));
+    }
+    
+    // Show menu again
+    const client = await clientModel.findByPhone(phone);
+    if (client) {
+      const upcoming = await appointmentModel.findUpcomingByClientPhone(phone);
+      
+      let message = `✅ *Appointment Rescheduled!*\n\n`;
+      message += `📅 ${formatDateLong(ctx.selected_date)} at ${ctx.selected_time}\n\n`;
+      message += `What would you like to do next?\n\n`;
+      message += `1️⃣ *See my appointment*\n`;
+      message += `2️⃣ *Book another*\n`;
+      
+      // Set menu state
+      await sessionService.setSession(phone, {
+        role: 'client',
+        state: 'menu',
+        tenant_id: session.tenant_id,
+        context: {
+          client_name: client.name,
+          returning_client: true,
+          has_upcoming_appointment: true,
+          upcoming_appointment: upcoming,
+        },
+      });
+      
+      return sendMessage(phone, message);
+    }
+    
+    return sendMessage(
+      phone,
+      `✅ *Appointment Rescheduled!*\n\n` +
+      `Your new appointment is on ${formatDateLong(ctx.selected_date)} at ${ctx.selected_time}.`
+    );
+  } catch (err) {
+    logger.error(`Failed to reschedule appointment: ${err.message}`);
+    return sendMessage(phone, '❌ Sorry, there was an error rescheduling. Please try again.');
+  }
+}
+
 module.exports = {
   handleClientMessage,
   startBooking,
+  showReturningClientMenu,
 };
