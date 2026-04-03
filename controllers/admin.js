@@ -400,10 +400,12 @@ async function handleFirstServicePrice(phone, body, session) {
         `🔗 Booking Code: *${bookingCode}*\n` +
         `📎 Booking Link:\n${bookingLink}\n\n` +
         `First service added: *${ctx.temp_service_name}* (${ctx.temp_service_duration} min, ${formatCurrency(price)})\n\n` +
-        `*As the salon owner, you can now:*\n` +
-        `• View appointments (type *1* or *TODAY*)\n` +
-        `• Add/remove services (type *4* or *ADD SERVICE*)\n` +
-        `• Manage working hours (type *6* or *HOURS*)\n\n` +
+        `*As the salon owner, use the menu to access:*\n` +
+        `• Appointments viewing\n` +
+        `• Add/remove services\n` +
+        `• Manage working hours\n` +
+        `• And more features\n\n` +
+        `📖 Type *HELP* or *9* anytime to see the full menu.\n\n` +
         `Would you like to add another service? Type the service name or type *DONE* to finish setup.`
     );
   } catch (err) {

@@ -213,7 +213,7 @@ async function handleServiceSelection(phone, body, session) {
   if (!selectedService) {
     return sendMessage(
       phone,
-      `Please select a valid service number (1-${services.length}).`
+      `❌ Please select a valid service number (1-${services.length}).`
     );
   }
 
@@ -264,11 +264,15 @@ async function handleDateSelection(phone, body, session) {
   }
 
   if (!isValidDate(dateStr)) {
-    return sendMessage(phone, 'Please pick a number from the list or type a date in *YYYY-MM-DD* format.');
+    const invalidNum = parseInt(body.trim(), 10);
+    const errorMsg = isNaN(invalidNum) 
+      ? '❌ Invalid input. Please pick a number from the list.'
+      : `❌ Entered number not valid (${invalidNum}). Please pick a number from the list.`;
+    return sendMessage(phone, errorMsg);
   }
 
   if (isDateInPast(dateStr)) {
-    return sendMessage(phone, 'That date is in the past. Please choose a future date.');
+    return sendMessage(phone, '❌ That date is in the past. Please choose a future date.');
   }
 
   // Check if salon is open on that day
@@ -279,7 +283,7 @@ async function handleDateSelection(phone, body, session) {
   if (!daySchedule || daySchedule.toLowerCase() === 'closed') {
     return sendMessage(
       phone,
-      `Sorry, *${tenant.name}* is closed on *${dayName.charAt(0).toUpperCase() + dayName.slice(1)}*.\nPlease choose another date.`
+      `❌ Sorry, *${tenant.name}* is closed on *${dayName.charAt(0).toUpperCase() + dayName.slice(1)}*.\nPlease choose another date.`
     );
   }
 
@@ -293,7 +297,7 @@ async function handleDateSelection(phone, body, session) {
   if (slots.length === 0) {
     return sendMessage(
       phone,
-      `No available time slots on *${dateStr}*. Please try another date.`
+      `❌ No available time slots on *${dateStr}*. Please try another date.`
     );
   }
 
@@ -325,7 +329,7 @@ async function handleTimeSelection(phone, body, session) {
   if (isNaN(num) || num < 1 || num > slots.length) {
     return sendMessage(
       phone,
-      `Please select a valid time slot. Type a number from 1 to ${slots.length}.`
+      `❌ Please select a valid time slot. Type a number from 1 to ${slots.length}.`
     );
   }
 
@@ -363,7 +367,7 @@ async function handleConfirmation(phone, body, session) {
   }
 
   if (input !== 'yes' && input !== 'confirm' && input !== 'y') {
-    return sendMessage(phone, 'Please type *YES* to confirm or *NO* to cancel.');
+    return sendMessage(phone, '❌ Please type *YES* to confirm or *NO* to cancel.');
   }
 
   const ctx = session.context;
@@ -429,7 +433,7 @@ async function handleConfirmation(phone, body, session) {
     );
   } catch (err) {
     logger.error(`Failed to create appointment: ${err.message}`);
-    return sendMessage(phone, 'Sorry, there was an error creating your booking. Please try again.');
+    return sendMessage(phone, '❌ Sorry, there was an error creating your booking. Please try again.');
   }
 }
 
@@ -456,12 +460,12 @@ async function showClientAppointments(phone) {
 async function cancelClientAppointment(phone, idStr) {
   const id = parseInt(idStr, 10);
   if (isNaN(id)) {
-    return sendMessage(phone, 'Please provide a valid appointment ID.\nUsage: *CANCEL <id>*');
+    return sendMessage(phone, '❌ Please provide a valid appointment ID.\nUsage: *CANCEL <id>*');
   }
 
   const cancelled = await appointmentModel.cancelByClient(id, phone);
   if (!cancelled) {
-    return sendMessage(phone, `Appointment #${id} not found or already cancelled.`);
+    return sendMessage(phone, `❌ Appointment #${id} not found or already cancelled.`);
   }
 
   // Notify salon owner
@@ -554,7 +558,7 @@ async function handleGoBack(phone, session) {
   const ctx = session.context;
 
   if (!prevState) {
-    return sendMessage(phone, 'You are at the first step. Type *CANCEL* to stop the booking.');
+    return sendMessage(phone, '❌ You are at the first step. Type *CANCEL* to stop the booking.');
   }
 
   // Restore previous state and remove the "back" tracking
@@ -610,7 +614,7 @@ async function handleGoBack(phone, session) {
       );
     }
     default:
-      return sendMessage(phone, 'Cannot go back further. Type *CANCEL* to stop.');
+      return sendMessage(phone, '❌ Cannot go back further. Type *CANCEL* to stop.');
   }
 }
 
