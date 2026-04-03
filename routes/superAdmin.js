@@ -51,15 +51,26 @@ router.get('/dashboard', requireSuperAdmin, (req, res) => {
   res.redirect('/admin/overview');
 });
 
-// Salons list page with tabs (protected)
+// Salons list page - shows ALL salons (protected)
 router.get('/salons', requireSuperAdmin, async (req, res) => {
   try {
-    const tab = req.query.tab || 'active';
-    const salons = await getSalonsByTab(tab);
-    res.send(getSalonsPage(salons, tab, req.session.username));
+    const salons = await getAllSalonsWithStats();
+    res.send(getAllSalonsPage(salons, req.session.username));
   } catch (err) {
     logger.error(`Salons list error: ${err.message}`);
     res.status(500).send('Error loading salons');
+  }
+});
+
+// Subscriptions page with tabs (protected)
+router.get('/subscriptions', requireSuperAdmin, async (req, res) => {
+  try {
+    const tab = req.query.tab || 'active';
+    const salons = await getSalonsByTab(tab);
+    res.send(getSubscriptionsPage(salons, tab, req.session.username));
+  } catch (err) {
+    logger.error(`Subscriptions list error: ${err.message}`);
+    res.status(500).send('Error loading subscriptions');
   }
 });
 
@@ -649,6 +660,7 @@ function getOverviewPage(stats, username) {
     <div class="nav">
       <a href="/admin/overview" class="active">Overview</a>
       <a href="/admin/salons">Salons</a>
+      <a href="/admin/subscriptions">Subscriptions</a>
       <a href="/admin/settings">Settings</a>
     </div>
     <a href="/admin/logout" class="logout-btn">Logout</a>
@@ -686,15 +698,15 @@ function getOverviewPage(stats, username) {
     <div class="section">
       <h3>Quick Actions</h3>
       <div class="quick-links">
-        <a href="/admin/salons" class="quick-link">
+        <a href="/admin/subscriptions" class="quick-link">
           <span class="quick-link-icon">🏪</span>
           <span class="quick-link-text">View All Salons</span>
         </a>
-        <a href="/admin/salons?tab=expiring" class="quick-link">
+        <a href="/admin/subscriptions?tab=expiring" class="quick-link">
           <span class="quick-link-icon">⏰</span>
           <span class="quick-link-text">Expiring Soon</span>
         </a>
-        <a href="/admin/salons?tab=expired" class="quick-link">
+        <a href="/admin/subscriptions?tab=expired" class="quick-link">
           <span class="quick-link-icon">⚠️</span>
           <span class="quick-link-text">Expired Accounts</span>
         </a>
@@ -1354,7 +1366,248 @@ function getSalonDetailPage(salon) {
 </html>`;
 }
 
-function getSalonsPage(salons, activeTab, username) {
+function getAllSalonsPage(salons, username) {
+  const salonRows = salons.map(salon => {
+    const statusClass = salon.statusInfo.valid ? 'badge-green' : 'badge-red';
+    const statusText = salon.isActive === false ? 'Deactivated' : 
+                       salon.statusInfo.valid ? 'Active' : 'Expired';
+    return `
+    <tr onclick="window.location='/admin/salon/${salon.id}'" style="cursor: pointer;">
+      <td><strong>${escapeHtml(salon.name)}</strong><br><span class="badge ${statusClass}">${statusText}</span></td>
+      <td>${escapeHtml(salon.location || 'N/A')}</td>
+      <td>${salon.ownerPhone}</td>
+      <td><span class="badge">${salon.totalAppointments}</span></td>
+      <td><span class="badge badge-green">${salon.upcomingAppointments}</span></td>
+      <td>${salon.totalServices}</td>
+      <td><span class="code">${salon.bookingCode}</span></td>
+      <td>${formatDate(salon.createdAt)}</td>
+    </tr>
+  `}).join('');
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>OnTime Super Admin - All Salons</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #f5f7fa;
+      min-height: 100vh;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 {
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .nav {
+      display: flex;
+      gap: 8px;
+    }
+    .nav a {
+      color: white;
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      opacity: 0.8;
+      transition: all 0.3s;
+    }
+    .nav a:hover, .nav a.active {
+      opacity: 1;
+      background: rgba(255,255,255,0.2);
+    }
+    .logout-btn {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      padding: 8px 16px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 14px;
+      transition: background 0.3s;
+    }
+    .logout-btn:hover {
+      background: rgba(255,255,255,0.3);
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 30px 40px;
+    }
+    .page-header {
+      margin-bottom: 30px;
+    }
+    .page-header h2 {
+      font-size: 28px;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    .page-header p {
+      color: #64748b;
+    }
+    .section {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    .section-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-header h3 {
+      font-size: 18px;
+      color: #333;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th {
+      background: #f8fafc;
+      padding: 14px 16px;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    td {
+      padding: 16px;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 14px;
+      color: #334155;
+    }
+    tr:hover {
+      background: #f8fafc;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      background: #e0e7ff;
+      color: #4338ca;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      min-width: 28px;
+      text-align: center;
+    }
+    .badge-green {
+      background: #d1fae5;
+      color: #047857;
+    }
+    .badge-red {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+    .code {
+      font-family: 'Courier New', monospace;
+      background: #f1f5f9;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #64748b;
+    }
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 768px) {
+      .header { 
+        padding: 16px 20px;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .nav {
+        order: 3;
+        width: 100%;
+        justify-content: center;
+      }
+      .container { padding: 20px; }
+      table { font-size: 12px; }
+      th, td { padding: 10px 12px; }
+      td:nth-child(3), th:nth-child(3),
+      td:nth-child(8), th:nth-child(8) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>💇‍♀️ OnTime Super Admin</h1>
+    <div class="nav">
+      <a href="/admin/overview">Overview</a>
+      <a href="/admin/salons" class="active">Salons</a>
+      <a href="/admin/subscriptions">Subscriptions</a>
+      <a href="/admin/settings">Settings</a>
+    </div>
+    <a href="/admin/logout" class="logout-btn">Logout</a>
+  </div>
+  
+  <div class="container">
+    <div class="page-header">
+      <h2>All Salons</h2>
+      <p>View all registered salons (${salons.length} total)</p>
+    </div>
+    
+    <div class="section">
+      <div class="section-header">
+        <h3>Registered Salons <span style="color: #64748b; font-weight: normal;">(${salons.length})</span></h3>
+        <span style="color: #64748b; font-size: 14px;">Click a row to view details</span>
+      </div>
+      ${salons.length > 0 ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Salon Name</th>
+            <th>Location</th>
+            <th>Owner Phone</th>
+            <th>Appointments</th>
+            <th>Upcoming</th>
+            <th>Services</th>
+            <th>Code</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${salonRows}
+        </tbody>
+      </table>
+      ` : `
+      <div class="empty-state">
+        <div class="empty-state-icon">🏪</div>
+        <h3>No salons registered yet</h3>
+        <p>Salons will appear here once they register via WhatsApp.</p>
+      </div>
+      `}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function getSubscriptionsPage(salons, activeTab, username) {
   const tabLabels = {
     active: 'Active Salons',
     expiring: 'Expiring Soon (7 days)',
@@ -1590,7 +1843,8 @@ function getSalonsPage(salons, activeTab, username) {
     <h1>💇‍♀️ OnTime Super Admin</h1>
     <div class="nav">
       <a href="/admin/overview">Overview</a>
-      <a href="/admin/salons" class="active">Salons</a>
+      <a href="/admin/salons">Salons</a>
+      <a href="/admin/subscriptions" class="active">Subscriptions</a>
       <a href="/admin/settings">Settings</a>
     </div>
     <a href="/admin/logout" class="logout-btn">Logout</a>
@@ -1603,13 +1857,13 @@ function getSalonsPage(salons, activeTab, username) {
     </div>
     
     <div class="tabs">
-      <a href="/admin/salons?tab=active" class="tab ${activeTab === 'active' ? 'active' : ''}">
+      <a href="/admin/subscriptions?tab=active" class="tab ${activeTab === 'active' ? 'active' : ''}">
         ✅ Active <span class="count-badge">${activeTab === 'active' ? salons.length : ''}</span>
       </a>
-      <a href="/admin/salons?tab=expiring" class="tab ${activeTab === 'expiring' ? 'active' : ''}">
+      <a href="/admin/subscriptions?tab=expiring" class="tab ${activeTab === 'expiring' ? 'active' : ''}">
         ⏰ Expiring Soon <span class="count-badge">${activeTab === 'expiring' ? salons.length : ''}</span>
       </a>
-      <a href="/admin/salons?tab=expired" class="tab ${activeTab === 'expired' ? 'active' : ''}">
+      <a href="/admin/subscriptions?tab=expired" class="tab ${activeTab === 'expired' ? 'active' : ''}">
         ❌ Expired <span class="count-badge">${activeTab === 'expired' ? salons.length : ''}</span>
       </a>
     </div>
@@ -1919,6 +2173,7 @@ function getSettingsPage(subscriptionFees, username, error = null, success = nul
     <div class="nav">
       <a href="/admin/overview">Overview</a>
       <a href="/admin/salons">Salons</a>
+      <a href="/admin/subscriptions">Subscriptions</a>
       <a href="/admin/settings" class="active">Settings</a>
     </div>
     <a href="/admin/logout" class="logout-btn">Logout</a>
