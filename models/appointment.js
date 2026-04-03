@@ -64,7 +64,7 @@ async function findByClientPhone(clientPhone) {
      LEFT JOIN services s ON a.service_id = s.id
      LEFT JOIN tenants t ON a.tenant_id = t.id
      WHERE a.client_phone = $1
-       AND a.start_time >= NOW()
+       AND a.start_time >= (NOW() AT TIME ZONE 'UTC')
        AND a.status = 'confirmed'
      ORDER BY a.start_time`,
     [clientPhone]

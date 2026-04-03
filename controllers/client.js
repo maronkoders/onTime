@@ -515,9 +515,23 @@ async function showClientAppointments(phone) {
   }
 
   const lines = appointments.map((a, i) => {
-    const hTime = toHarareTime(a.start_time);
+    logger.info(`[VIEW DEBUG] Raw start_time from DB: ${a.start_time} (type: ${typeof a.start_time})`);
+    
+    // PostgreSQL returns Date objects - convert to UTC ISO string first
+    let startTimeStr;
+    if (a.start_time instanceof Date) {
+      // Force UTC interpretation by using toISOString()
+      startTimeStr = a.start_time.toISOString();
+    } else {
+      startTimeStr = String(a.start_time);
+    }
+    
+    logger.info(`[VIEW DEBUG] startTimeStr for conversion: ${startTimeStr}`);
+    const hTime = toHarareTime(startTimeStr);
+    logger.info(`[VIEW DEBUG] After toHarareTime: ${hTime.toISOString()}`);
     const dateStr = hTime.toISOString().split('T')[0];
     const timeStr = formatTime(hTime);
+    logger.info(`[VIEW DEBUG] Formatted time string: ${timeStr}`);
     return `${i + 1}. *${a.service_name || 'Service'}* at *${a.salon_name}*\n   📅 ${formatDateLong(dateStr)} at ${timeStr}\n   🆔 ID: #${a.id}`;
   });
 
@@ -999,8 +1013,16 @@ async function handleRescheduleConfirm(phone, body, session) {
   
   try {
     // Calculate new times
+    logger.info(`[RESCHEDULE DEBUG] Input - date: ${ctx.selected_date}, time: ${ctx.selected_time}`);
+    logger.info(`[RESCHEDULE DEBUG] HARARE_OFFSET_HOURS: ${require('../utils/time').HARARE_OFFSET_HOURS}`);
+    
     const newStartTimeUTC = createUTCDateTime(ctx.selected_date, ctx.selected_time);
+    logger.info(`[RESCHEDULE DEBUG] newStartTimeUTC timestamp: ${newStartTimeUTC.getTime()}`);
+    logger.info(`[RESCHEDULE DEBUG] newStartTimeUTC ISO: ${newStartTimeUTC.toISOString()}`);
+    
     const newEndTimeUTC = new Date(newStartTimeUTC.getTime() + ctx.selected_service_duration * 60 * 1000);
+    
+    logger.info(`[RESCHEDULE DEBUG] newEndTimeUTC: ${newEndTimeUTC.toISOString()}`);
     
     // Update the appointment
     const updated = await appointmentModel.reschedule(ctx.reschedule_appointment_id, {
@@ -1012,6 +1034,9 @@ async function handleRescheduleConfirm(phone, body, session) {
     if (!updated) {
       return sendMessage(phone, '❌ Unable to reschedule. The appointment may have been cancelled.');
     }
+    
+    logger.info(`[RESCHEDULE DEBUG] Updated appointment returned: ${JSON.stringify(updated)}`);
+    logger.info(`[RESCHEDULE DEBUG] updated.start_time: ${updated.start_time}`);
     
     await sessionService.clearSession(phone);
     

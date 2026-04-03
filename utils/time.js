@@ -22,8 +22,10 @@ function toUTC(harareDate) {
 
 function formatTime(date) {
   const d = typeof date === 'string' ? new Date(date) : date;
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  // After toHarareTime conversion, use local hours (getHours) not UTC (getUTCHours)
+  // because the Date timestamp has already been adjusted
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
 }
 
@@ -66,9 +68,19 @@ function createUTCDateTime(dateStr, timeStr) {
   const { hours, minutes } = parseTimeString(timeStr);
   // dateStr is in Harare local, timeStr is in Harare local
   // Convert to UTC by subtracting offset
-  const d = new Date(`${dateStr}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00Z`);
+  const isoString = `${dateStr}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00Z`;
+  console.log(`[TIME DEBUG] createUTCDateTime - isoString: ${isoString}`);
+  const d = new Date(isoString);
+  console.log(`[TIME DEBUG] createUTCDateTime - initial Date: ${d.toISOString()}`);
+  console.log(`[TIME DEBUG] createUTCDateTime - initial timestamp: ${d.getTime()}`);
+  console.log(`[TIME DEBUG] createUTCDateTime - HARARE_OFFSET_HOURS: ${HARARE_OFFSET_HOURS}`);
+  const offsetMs = HARARE_OFFSET_HOURS * 60 * 60 * 1000;
+  console.log(`[TIME DEBUG] createUTCDateTime - offsetMs: ${offsetMs}`);
   // Subtract Harare offset to get UTC
-  return new Date(d.getTime() - HARARE_OFFSET_HOURS * 60 * 60 * 1000);
+  const result = new Date(d.getTime() - offsetMs);
+  console.log(`[TIME DEBUG] createUTCDateTime - result timestamp: ${result.getTime()}`);
+  console.log(`[TIME DEBUG] createUTCDateTime - result ISO: ${result.toISOString()}`);
+  return result;
 }
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
