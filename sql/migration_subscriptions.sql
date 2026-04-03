@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     subscription_fee_id INTEGER REFERENCES subscription_fees(id) ON DELETE SET NULL,
     amount_paid DECIMAL(10,2),
     payment_reference VARCHAR(255),
+    last_reminder_sent TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );

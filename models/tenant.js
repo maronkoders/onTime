@@ -33,6 +33,11 @@ async function updateWorkingHours(tenantId, workingHours) {
   return result.rows[0];
 }
 
+async function findByName(name) {
+  const result = await db.query('SELECT * FROM tenants WHERE LOWER(name) = LOWER($1)', [name]);
+  return result.rows[0] || null;
+}
+
 async function getAll() {
   const result = await db.query('SELECT * FROM tenants ORDER BY id');
   return result.rows;
@@ -140,6 +145,7 @@ module.exports = {
   findById,
   create,
   updateWorkingHours,
+  findByName,
   getAll,
   isSubscriptionValid,
   getSubscriptionStatus,

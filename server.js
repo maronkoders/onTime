@@ -6,6 +6,7 @@ const morgan = require('morgan');
 const logger = require('./utils/logger');
 const { initDatabase } = require('./config/db');
 const { startDailyNotifications } = require('./services/notifications');
+const { startExpiryReminderJob } = require('./services/subscriptionReminder');
 const webhookController = require('./controllers/webhook');
 const simulatorRoutes = require('./routes/simulator');
 const superAdminRoutes = require('./routes/superAdmin');
@@ -65,6 +66,9 @@ async function start() {
 
     // Start daily notification cron job
     startDailyNotifications();
+
+    // Start subscription expiry reminder cron job
+    startExpiryReminderJob();
 
     app.listen(PORT, () => {
       logger.info(`OnTime server running on port ${PORT}`);

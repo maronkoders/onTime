@@ -390,6 +390,19 @@ async function handleConfirmation(phone, body, session) {
       const formattedDate = formatDateLong(ctx.selected_date);
       const cleanPhone = phone.replace(/^\+/, '');
       const waLink = `https://wa.me/${cleanPhone}`;
+      
+      // Get subscription info for reminder
+      const subscriptionModel = require('../models/subscription');
+      const subInfo = await subscriptionModel.getSubscriptionInfo(tenant.id);
+      let subscriptionReminder = '';
+      
+      if (subInfo.hasActiveSubscription) {
+        if (subInfo.isExpiringSoon) {
+          subscriptionReminder = `\n\n⏰ *Subscription Alert*: ${subInfo.daysRemaining} days remaining. Renew soon!`;
+        } else {
+          subscriptionReminder = `\n\n📅 ${subInfo.daysRemaining} days left on your ${subInfo.status} subscription.`;
+        }
+      }
 
       sendMessage(
         tenant.owner_phone,
@@ -399,7 +412,8 @@ async function handleConfirmation(phone, body, session) {
           `Service: ${ctx.selected_service_name}\n` +
           `Date: ${formattedDate}\n` +
           `Time: ${ctx.selected_time}\n` +
-          `Appointment ID: #${appointment.id}`
+          `Appointment ID: #${appointment.id}` +
+          subscriptionReminder
       ).catch((err) => logger.error(`Failed to notify salon owner: ${err.message}`));
     }
 

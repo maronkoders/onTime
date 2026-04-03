@@ -1,4 +1,5 @@
 const tenantModel = require('../models/tenant');
+const subscriptionModel = require('../models/subscription');
 const serviceModel = require('../models/service');
 const appointmentModel = require('../models/appointment');
 const sessionService = require('../services/session');
@@ -262,6 +263,13 @@ async function handleSalonName(phone, body, session) {
   if (name.length < 2) {
     return sendMessage(phone, 'Please provide a valid salon name (at least 2 characters).\n_Type *BACK* to cancel_');
   }
+  
+  // Check if salon name already exists
+  const existingTenant = await tenantModel.findByName(name);
+  if (existingTenant) {
+    return sendMessage(phone, `❌ Sorry, the salon name "${name}" is already registered. Please choose a different name.\n_Type *BACK* to cancel_`);
+  }
+  
   await sessionService.updateSession(phone, {
     state: 'awaiting_location',
     context: { salon_name: name, prev_state: 'awaiting_salon_name' },
@@ -361,6 +369,17 @@ async function handleFirstServicePrice(phone, body, session) {
       price,
     });
 
+    // Create subscription record with 14-day trial
+    const trialExpiryDate = new Date();
+    trialExpiryDate.setDate(trialExpiryDate.getDate() + 14);
+    
+    await subscriptionModel.create({
+      tenantId: tenant.id,
+      startDate: new Date(),
+      expiryDate: trialExpiryDate,
+      subscriptionStatus: 'trial',
+    });
+
     const bookingLink = generateBookingLink(process.env.BOT_PHONE_NUMBER, bookingCode);
 
     await sessionService.updateSession(phone, {
@@ -374,6 +393,9 @@ async function handleFirstServicePrice(phone, body, session) {
       phone,
       `✅ *Registration Complete!*\n\n` +
         `👔 You are now the verified owner of *${tenant.name}*!\n\n` +
+        `🎁 *FREE TRIAL PERIOD* 🎁\n` +
+        `You have *14 days* to try all features for FREE!\n` +
+        `Your trial expires on: *${trialExpiryDate.toLocaleDateString()}*\n\n` +
         `📍 Location: ${tenant.location}\n` +
         `🔗 Booking Code: *${bookingCode}*\n` +
         `📎 Booking Link:\n${bookingLink}\n\n` +
