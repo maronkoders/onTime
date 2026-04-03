@@ -8,7 +8,8 @@
     "dev": "nodemon server.js",
     "db:init": "node -e \"require('./config/db').initDatabase()\"",
     "migrate:subscription-fees": "node scripts/migrate-subscription-fees.js",
-    "migrate:subscriptions": "node scripts/migrate-subscriptions.js"
+    "migrate:subscriptions": "node scripts/migrate-subscriptions.js",
+    "migrate:revenue-records": "node scripts/migrate-revenue-records.js"
   },
   "keywords": [
     "whatsapp",
