@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "db:init": "node -e \"require('./config/db').initDatabase()\""
+    "db:init": "node -e \"require('./config/db').initDatabase()\"",
+    "migrate:subscription-fees": "node scripts/migrate-subscription-fees.js"
   },
   "keywords": [
     "whatsapp",

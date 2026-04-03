@@ -58,6 +58,31 @@ async function startBooking(phone, bookingCode) {
     return sendMessage(phone, `Sorry, no salon found with code "${bookingCode}". Please check the link and try again.`);
   }
 
+  // Check if salon subscription is active
+  const subscriptionStatus = tenantModel.getSubscriptionStatus(tenant);
+  if (!subscriptionStatus.valid) {
+    let message = `⛔ *Booking Unavailable*\n\n`;
+    message += `Sorry, *${tenant.name}* is currently not accepting bookings.`;
+    if (subscriptionStatus.reason === 'Account deactivated') {
+      message += `\n\nThe salon account has been temporarily deactivated.`;
+    } else if (subscriptionStatus.trialEnded) {
+      message += `\n\n💡 *The salon's free trial has ended.*\n`;
+      message += `To continue accepting bookings, the salon owner needs to upgrade.`;
+    } else if (subscriptionStatus.subscriptionEnded) {
+      message += `\n\n💡 *The salon's subscription has expired.*\n`;
+      message += `Renewal is needed to restore booking services.`;
+    }
+    message += `\n\n📦 *Affordable Plans:*\n`;
+    message += `• 1 Month: $5\n`;
+    message += `• 3 Months: $12 (20% off)\n`;
+    message += `• 6 Months: $22 (27% off)\n\n`;
+    message += `💳 *Payment Methods:*\n`;
+    message += `• Innbucks / Ecocash: *0775635191*\n`;
+    message += `  (Brian H Thomas)\n\n`;
+    message += `Please contact the salon owner directly or share this payment info with them to help them reactivate their booking system! 🙏`;
+    return sendMessage(phone, message);
+  }
+
   // Check if this phone is the salon owner
   if (phone === tenant.owner_phone) {
     return sendMessage(phone, `You can't book an appointment at your own salon! Use *today* or *appointments* to manage your schedule.`);

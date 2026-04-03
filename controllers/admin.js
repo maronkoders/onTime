@@ -49,8 +49,16 @@ async function handleAdminMessage(phone, body, session, tenant) {
 
   // Check subscription status
   const subscriptionStatus = tenantModel.getSubscriptionStatus(tenant);
+  const lowerBody = body.toLowerCase().trim();
   
+  // If subscription expired/deactivated, only allow payment-related commands
   if (!subscriptionStatus.valid) {
+    // Check if this is a payment confirmation command
+    if (lowerBody.startsWith('paid ')) {
+      return handlePaymentConfirmation(phone, tenant, body);
+    }
+    
+    // Block all other commands and show payment message
     let message = `⛔ *Access Denied*\n\n`;
     
     if (subscriptionStatus.reason === 'Account deactivated') {
@@ -59,23 +67,43 @@ async function handleAdminMessage(phone, body, session, tenant) {
     } else if (subscriptionStatus.trialEnded) {
       const trialEndDate = new Date(tenant.trial_ends_at).toLocaleDateString();
       message += `Your *14-day free trial* ended on ${trialEndDate}.\n\n` +
-        `To continue using OnTime, please upgrade to a paid subscription.\n\n` +
-        `Contact support to learn about our affordable plans.`;
+        `💡 *Don't lose your clients!*\n` +
+        `Your booking link is no longer accepting appointments. Reactivate now to keep your salon running 24/7.\n\n` +
+        `📦 *Affordable Plans:*\n` +
+        `• 1 Month: $5\n` +
+        `• 3 Months: $12 (20% off)\n` +
+        `• 6 Months: $22 (27% off)\n\n` +
+        `💳 *Payment Methods:*\n` +
+        `• Innbucks / Ecocash: *0775635191*\n` +
+        `  (Brian H Thomas)\n\n` +
+        `✅ *To reactivate:*\n` +
+        `1. Make payment using above details\n` +
+        `2. Reply with: *PAID <amount> <method>*\n` +
+        `   Example: *PAID 12 ecocash*\n\n` +
+        `Your account will be activated within 24 hours! 🚀`;
     } else if (subscriptionStatus.subscriptionEnded) {
       const subEndDate = new Date(tenant.subscription_ends_at).toLocaleDateString();
       message += `Your subscription expired on ${subEndDate}.\n\n` +
-        `Please renew your subscription to continue using all features.\n\n` +
-        `Contact support for renewal options.`;
+        `💡 *Your clients are waiting!*\n` +
+        `Reactivate now to restore your booking system.\n\n` +
+        `📦 *Renewal Options:*\n` +
+        `• 1 Month: $5\n` +
+        `• 3 Months: $12 (20% off)\n` +
+        `• 6 Months: $22 (27% off)\n\n` +
+        `💳 *Payment Methods:*\n` +
+        `• Innbucks / Ecocash: *0775635191*\n` +
+        `  (Brian H Thomas)\n\n` +
+        `✅ *To renew:*\n` +
+        `1. Make payment using above details\n` +
+        `2. Reply with: *PAID <amount> <method>*\n` +
+        `   Example: *PAID 5 innbucks*\n\n` +
+        `Your subscription will be renewed within 24 hours! 🚀`;
     } else {
       message += subscriptionStatus.reason || 'Access denied.';
     }
     
-    message += `\n\n📧 *Need help?* Contact our support team.`;
-    
     return sendMessage(phone, message);
   }
-
-  let lowerBody = body.toLowerCase().trim();
 
   // Check if we're in a multi-step flow
   if (session && session.state) {
@@ -791,6 +819,35 @@ function parseWorkingHoursInput(input) {
   }
 
   return result;
+}
+
+async function handlePaymentConfirmation(phone, tenant, body) {
+  // Parse: PAID <amount> <method>
+  const parts = body.trim().split(/\s+/);
+  const amount = parts[1];
+  const method = parts.slice(2).join(' ') || 'Not specified';
+  
+  // Notify super admin
+  const adminPhone = process.env.SUPER_ADMIN_PHONE || process.env.BOT_PHONE_NUMBER;
+  if (adminPhone) {
+    sendMessage(
+      adminPhone,
+      `💰 *Payment Report*\n\n` +
+        `Salon: *${tenant.name}*\n` +
+        `Phone: ${phone}\n` +
+        `Amount: $${amount}\n` +
+        `Method: ${method}\n\n` +
+        `To activate, go to: /admin/salon/${tenant.id}`
+    ).catch((err) => logger.error(`Failed to notify admin of payment: ${err.message}`));
+  }
+  
+  return sendMessage(
+    phone,
+    `✅ *Payment Reported!*\n\n` +
+      `Amount: $${amount}\n` +
+      `Method: ${method}\n\n` +
+      `Thank you! We're verifying your payment and will activate your account shortly. You'll receive a confirmation message once active.`
+  );
 }
 
 module.exports = {
