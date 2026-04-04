@@ -272,7 +272,7 @@ async function handleServiceSelection(phone, body, session) {
   const tenant = await tenantModel.findById(session.tenant_id);
   const { available, unavailable } = await buildDateOptions(
     tenant.working_hours, 
-    25, 
+    10, 
     session.tenant_id, 
     selectedService.duration_minutes
   );
