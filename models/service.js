@@ -39,10 +39,41 @@ async function removeByName(name, tenantId) {
   return result.rows[0] || null;
 }
 
+async function update(id, tenantId, { name, durationMinutes, price }) {
+  // Build dynamic query based on provided fields
+  const updates = [];
+  const values = [];
+  let paramCount = 1;
+  
+  if (name !== undefined) {
+    updates.push(`name = $${paramCount++}`);
+    values.push(name);
+  }
+  if (durationMinutes !== undefined) {
+    updates.push(`duration_minutes = $${paramCount++}`);
+    values.push(durationMinutes);
+  }
+  if (price !== undefined) {
+    updates.push(`price = $${paramCount++}`);
+    values.push(price);
+  }
+  
+  if (updates.length === 0) {
+    return null;
+  }
+  
+  values.push(id, tenantId);
+  const query = `UPDATE services SET ${updates.join(', ')} WHERE id = $${paramCount++} AND tenant_id = $${paramCount} RETURNING *`;
+  
+  const result = await db.query(query, values);
+  return result.rows[0] || null;
+}
+
 module.exports = {
   findByTenant,
   findById,
   create,
   remove,
   removeByName,
+  update,
 };

@@ -56,6 +56,20 @@ async function findUpcomingByTenant(tenantId, days = 7) {
   return result.rows;
 }
 
+async function findAllByTenant(tenantId) {
+  // Get all confirmed appointments for tenant, ordered chronologically
+  const result = await db.query(
+    `SELECT a.*, s.name as service_name, s.duration_minutes, s.price
+     FROM appointments a
+     LEFT JOIN services s ON a.service_id = s.id
+     WHERE a.tenant_id = $1
+       AND a.status = 'confirmed'
+     ORDER BY a.start_time ASC`,
+    [tenantId]
+  );
+  return result.rows;
+}
+
 async function findByClientPhone(clientPhone) {
   const result = await db.query(
     `SELECT a.*, s.name as service_name, s.duration_minutes, s.price,
