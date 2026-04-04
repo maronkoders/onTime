@@ -63,10 +63,12 @@ async function getAvailableSlots(tenantId, dateStr, serviceDurationMinutes) {
       existingAppointments = existingAppointments.concat(moreAppts);
     }
 
-    // Filter appointments to only those within the working hours window
+    // Filter appointments to those that overlap with the working hours window
+    // An appointment overlaps if: appt.start < window.end AND appt.end > window.start
     const filteredAppointments = existingAppointments.filter((appt) => {
       const apptStart = new Date(appt.start_time).getTime();
-      return apptStart >= utcDateStart.getTime() && apptStart < utcDateEnd.getTime();
+      const apptEnd = new Date(appt.end_time).getTime();
+      return apptStart < utcDateEnd.getTime() && apptEnd > utcDateStart.getTime();
     });
 
     // Sort by start_time
