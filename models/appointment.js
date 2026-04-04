@@ -169,6 +169,7 @@ module.exports = {
   findByTenant,
   findByTenantAndDate,
   findUpcomingByTenant,
+  findAllByTenant,
   findByClientPhone,
   findUpcomingByClientPhone,
   reschedule,

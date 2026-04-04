@@ -194,39 +194,8 @@ async function handleAdminMessage(phone, body, session, tenant) {
     return startEditService(phone, tenant, arg);
   }
 
-  // Unknown command
-  return sendMessage(
-    phone,
-    `❓ I didn't understand that command.
-
-` +
-      `*Quick commands (type the NUMBER):*
-` +
-      `1️⃣ *TODAY* - Today's appointments
-` +
-      `2️⃣ *APPOINTMENTS* - Upcoming appointments
-` +
-      `3️⃣ *SERVICES* - List services
-` +
-      `4️⃣ *ADD SERVICE* - Add a service
-` +
-      `5️⃣ *REMOVE SERVICE <id>* - Remove service
-` +
-      `6️⃣ *HOURS* - View/set hours
-` +
-      `7️⃣ *LINK* - Get booking link
-` +
-      `8️⃣ *CANCEL <id>* - Cancel appointment
-` +
-      `9️⃣ *HELP* - Show all commands
-` +
-      `🔟 *PDF* - Export appointments to PDF
-` +
-      `1️⃣1️⃣ *EDIT SERVICE* - Edit a service
-\n` +
-      `*Type *BACK* at any time to return to this menu*\n` +
-      `*Type *CANCEL* to exit current operation*`
-  );
+  // Unknown command - show help menu
+  return showHelp(phone, tenant);
 }
 
 async function handleAdminState(phone, body, session, tenant) {
@@ -843,13 +812,17 @@ async function showHelp(phone, tenant) {
 ` +
       `5️⃣ *REMOVE SERVICE <id>* - Remove a service
 ` +
-      `6️⃣ *HOURS* - View working hours / set hours
+      `6️⃣ *HOURS* - View/set working hours
 ` +
       `7️⃣ *LINK* - Get your booking link
 ` +
       `8️⃣ *CANCEL <id>* - Cancel an appointment
 ` +
       `9️⃣ *HELP* - Show this menu
+` +
+      `🔟 *PDF* - Export appointments to PDF
+` +
+      `1️⃣1️⃣ *EDIT SERVICE* - Edit a service
 
 ` +
       `*Examples:*
@@ -857,6 +830,11 @@ async function showHelp(phone, tenant) {
       `Type *6 monday 08:00-18:00* to set hours
 ` +
       `Type *8* to cancel appointment #42
+
+` +
+      `_Type *BACK* at any time to return to this menu_
+` +
+      `_Type *CANCEL* to exit current operation_
 
 ` +
       `📎 Your booking link:\n${link}`
