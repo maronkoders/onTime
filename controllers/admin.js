@@ -1010,25 +1010,33 @@ async function startEditService(phone, tenant, serviceIdOrName = null) {
   // If service ID or name provided, try to find it
   if (serviceIdOrName) {
     let service = null;
+    const arg = serviceIdOrName.trim();
     
-    // Try by ID first
-    const byId = services.find(s => s.id.toString() === serviceIdOrName);
-    if (byId) {
-      service = byId;
+    // First, try to parse as a list number (1, 2, 3...)
+    const listNum = parseInt(arg, 10);
+    if (!isNaN(listNum) && listNum >= 1 && listNum <= services.length) {
+      service = services[listNum - 1]; // Convert to 0-based index
     } else {
-      // Try by name (case insensitive)
-      const byName = services.find(s => s.name.toLowerCase() === serviceIdOrName.toLowerCase());
-      if (byName) {
-        service = byName;
+      // Try by ID
+      const byId = services.find(s => s.id.toString() === arg);
+      if (byId) {
+        service = byId;
+      } else {
+        // Try by name (case insensitive)
+        const byName = services.find(s => s.name.toLowerCase() === arg.toLowerCase());
+        if (byName) {
+          service = byName;
+        }
       }
     }
     
     if (!service) {
+      const serviceList = services.map((s, i) => `${i + 1}. ${s.name} (${s.duration_minutes} min, $${s.price})`).join('\n');
       return sendMessage(
         phone,
-        `❌ Service "${serviceIdOrName}" not found.\n\n` +
-        `Available services:\n${services.map(s => `• ${s.id}. ${s.name} (${s.duration_minutes} min, $${s.price})`).join('\n')}\n\n` +
-        `Type *EDIT SERVICE <id>* or *EDIT SERVICE <name>* to try again.`
+        `❌ Service "${arg}" not found.\n\n` +
+        `Available services:\n${serviceList}\n\n` +
+        `Type e.g *EDIT SERVICE 1* to edit, or *BACK* to return to menu.`
       );
     }
     
@@ -1061,14 +1069,14 @@ async function startEditService(phone, tenant, serviceIdOrName = null) {
     );
   }
   
-  // Show list of services to select from
-  const serviceList = services.map(s => `${s.id}. ${s.name} (${s.duration_minutes} min, $${s.price})`).join('\n');
+  // Show list of services to select from (numbered 1, 2, 3...)
+  const serviceList = services.map((s, i) => `${i + 1}. ${s.name} (${s.duration_minutes} min, $${s.price})`).join('\n');
   
   return sendMessage(
     phone,
     `✏️ *Edit Service*\n\n` +
     `Select a service to edit:\n\n${serviceList}\n\n` +
-    `Type *EDIT SERVICE <id>* or *EDIT SERVICE <name>* to edit, or *BACK* to return to menu.`
+    `Type e.g *EDIT SERVICE 1* to edit, or *BACK* to return to menu.`
   );
 }
 
