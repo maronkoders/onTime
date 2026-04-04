@@ -111,8 +111,8 @@ async function routeMessage(phone, body) {
   const existingClient = await clientModel.findByPhone(phone);
   if (existingClient) {
     // Check if they have any upcoming appointments
-    const upcomingAppointments = await appointmentModel.findUpcomingByClientPhone(phone);
-    const hasUpcoming = upcomingAppointments.length > 0;
+    const upcomingAppointment = await appointmentModel.findUpcomingByClientPhone(phone);
+    const hasUpcoming = !!upcomingAppointment;
     
     // Create session for returning client
     await sessionService.setSession(phone, {
@@ -123,11 +123,11 @@ async function routeMessage(phone, body) {
         client_name: existingClient.name,
         returning_client: true,
         has_upcoming_appointment: hasUpcoming,
-        upcoming_appointment: hasUpcoming ? upcomingAppointments[0] : null,
+        upcoming_appointment: upcomingAppointment,
       },
     });
     
-    return clientController.showReturningClientMenu(phone, existingClient, hasUpcoming, upcomingAppointments[0]);
+    return clientController.showReturningClientMenu(phone, existingClient, hasUpcoming, upcomingAppointment);
   }
 
   // Default: new client flow

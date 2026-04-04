@@ -1,6 +1,6 @@
 const tenantModel = require('../models/tenant');
 const appointmentModel = require('../models/appointment');
-const { getDayOfWeek, parseTimeString, HARARE_OFFSET_HOURS } = require('../utils/time');
+const { getDayOfWeek, parseTimeString, HARARE_OFFSET_HOURS, todayHarare, nowHarare } = require('../utils/time');
 const logger = require('../utils/logger');
 
 const SLOT_INCREMENT_MINUTES = 30;
@@ -79,6 +79,15 @@ async function getAvailableSlots(tenantId, dateStr, serviceDurationMinutes) {
     const openMinutes = open.totalMinutes;
     const closeMinutes = close.totalMinutes;
 
+    // Determine the minimum slot time (for today, filter out past slots)
+    let minSlotMinutes = openMinutes;
+    const isToday = dateStr === todayHarare();
+    if (isToday) {
+      const now = nowHarare();
+      const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+      minSlotMinutes = Math.max(openMinutes, currentMinutes);
+    }
+
     // Build occupied intervals in Harare local minutes-from-midnight
     const occupied = filteredAppointments.map((appt) => {
       const startUTC = new Date(appt.start_time);
@@ -89,8 +98,8 @@ async function getAvailableSlots(tenantId, dateStr, serviceDurationMinutes) {
       return { start: startLocal, end: endLocal };
     });
 
-    // Iterate through time slots
-    for (let t = openMinutes; t + serviceDurationMinutes <= closeMinutes; t += SLOT_INCREMENT_MINUTES) {
+    // Iterate through time slots starting from minSlotMinutes (which may be current time for today)
+    for (let t = minSlotMinutes; t + serviceDurationMinutes <= closeMinutes; t += SLOT_INCREMENT_MINUTES) {
       const slotStart = t;
       const slotEnd = t + serviceDurationMinutes;
 

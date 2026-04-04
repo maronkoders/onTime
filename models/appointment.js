@@ -71,6 +71,7 @@ async function findAllByTenant(tenantId) {
 }
 
 async function findByClientPhone(clientPhone) {
+  // Get ALL confirmed appointments for client (no 7-day limit)
   const result = await db.query(
     `SELECT a.*, s.name as service_name, s.duration_minutes, s.price,
             t.name as salon_name
@@ -78,7 +79,7 @@ async function findByClientPhone(clientPhone) {
      LEFT JOIN services s ON a.service_id = s.id
      LEFT JOIN tenants t ON a.tenant_id = t.id
      WHERE a.client_phone = $1
-       AND a.start_time >= (NOW() AT TIME ZONE 'UTC')
+       AND a.start_time >= NOW()
        AND a.status = 'confirmed'
      ORDER BY a.start_time`,
     [clientPhone]
@@ -136,6 +137,7 @@ async function findByTenant(tenantId) {
 }
 
 async function findUpcomingByClientPhone(clientPhone) {
+  // Get client's next upcoming appointment (no 7-day limit)
   const result = await db.query(
     `SELECT a.*, s.name as service_name, s.duration_minutes, s.price,
             t.name as salon_name, t.booking_code

@@ -5,7 +5,7 @@ const clientModel = require('../models/client');
 const sessionService = require('../services/session');
 const scheduler = require('../services/scheduler');
 const { sendMessage } = require('../services/whatsapp');
-const { formatCurrency, formatServiceTable } = require('../utils/helpers');
+const { formatCurrency, formatServiceTable, generateBookingLink } = require('../utils/helpers');
 const {
   isValidDate,
   isDateInPast,
@@ -123,10 +123,10 @@ async function startBooking(phone, bookingCode) {
     message += `   📅 ${formatDateLong(dateStr)} at ${timeStr}\n\n`;
     message += `You can only have one active appointment at a time.\n\n`;
     message += `*Options:*\n`;
-    message += `1️⃣ *RESCHEDULE* - Change your appointment date/time\n`;
-    message += `2️⃣ *CANCEL* - Cancel your current appointment\n`;
-    message += `3️⃣ *SEE MY APPOINTMENT* - View details\n\n`;
-    message += `Type the number or command to proceed.`;
+    message += `1 - Reschedule - Change your appointment date/time\n`;
+    message += `2 - Cancel - Cancel your current appointment\n`;
+    message += `3 - My appointment - View details\n\n`;
+    message += `Type the number to proceed.`;
     
     // Set menu state so they can use the options
     await sessionService.setSession(phone, {
@@ -405,20 +405,32 @@ async function handleTimeSelection(phone, body, session) {
       `📅 Date: *${formattedDate}*\n` +
       `🕐 Time: *${selectedTime}*\n` +
       `⏱️ Duration: ${session.context.selected_service_duration} min\n\n` +
-      `Type *YES* to confirm, *NO* to cancel, or *BACK* to change time.`
+      `*Options:*\n` +
+      `1 - Confirm booking\n` +
+      `2 - Cancel booking\n` +
+      `3 - Go back - Change time\n\n` +
+      `Type the number to proceed.`
   );
 }
 
 async function handleConfirmation(phone, body, session) {
-  const input = body.trim().toLowerCase();
+  const input = body.trim();
 
-  if (input === 'no' || input === 'cancel') {
+  if (input === '2') {
     await sessionService.clearSession(phone);
     return sendMessage(phone, 'Booking cancelled. You can start again anytime using the booking link.');
   }
 
-  if (input !== 'yes' && input !== 'confirm' && input !== 'y') {
-    return sendMessage(phone, '❌ Please type *YES* to confirm or *NO* to cancel.');
+  if (input === '3') {
+    // Go back to time selection
+    await sessionService.updateSession(phone, {
+      state: 'awaiting_time',
+    });
+    return handleTimeSelection(phone, 'back', session);
+  }
+
+  if (input !== '1') {
+    return sendMessage(phone, '❌ Please type *1* to confirm, *2* to cancel, or *3* to go back.');
   }
 
   const ctx = session.context;
@@ -496,9 +508,10 @@ async function handleConfirmation(phone, body, session) {
         `📅 ${formatDateLong(ctx.selected_date)} at ${ctx.selected_time}\n` +
         `🆔 Appointment #${appointment.id}\n\n` +
         `*What's next?*\n` +
-        `1️⃣ Type *MY APPOINTMENT* to view details\n` +
-        `2️⃣ Type *RESCHEDULE* to change date/time\n` +
-        `3️⃣ Type *HELP* for all options\n\n` +
+        `1 - My appointment - View details\n` +
+        `2 - Reschedule - Change date/time\n` +
+        `3 - Help - All options\n\n` +
+        `Type the number to proceed.\n\n` +
         `Thank you! See you then! 🎉`
     );
   } catch (err) {
@@ -717,10 +730,10 @@ async function showReturningClientMenu(phone, client, hasUpcoming, upcomingAppt)
     message += `   🏪 ${upcomingAppt.salon_name}\n`;
     message += `   📅 ${formatDateLong(dateStr)} at ${timeStr}\n\n`;
     message += `*What would you like to do?*\n\n`;
-    message += `1️⃣ *See my appointment* - View details\n`;
-    message += `2️⃣ *Reschedule* - Change date/time\n`;
-    message += `3️⃣ *Cancel* - Cancel booking\n`;
-    message += `4️⃣ *Book another* - New appointment with ${upcomingAppt.salon_name}\n`;
+    message += `1 - See my appointment - View details\n`;
+    message += `2 - Reschedule - Change date/time\n`;
+    message += `3 - Cancel - Cancel booking\n`;
+    message += `4 - Book another - New appointment with ${upcomingAppt.salon_name}\n`;
   } else {
     message += `You have no upcoming appointments.\n\n`;
     message += `*What would you like to do?*\n\n`;
@@ -728,12 +741,13 @@ async function showReturningClientMenu(phone, client, hasUpcoming, upcomingAppt)
     if (client.preferred_tenant_id) {
       const tenant = await tenantModel.findById(client.preferred_tenant_id);
       if (tenant) {
-        message += `1️⃣ *Book appointment* with ${tenant.name}\n`;
-        message += `   (Code: ${tenant.booking_code})\n\n`;
+        const bookingLink = generateBookingLink(process.env.BOT_PHONE_NUMBER, tenant.booking_code);
+        message += `1 - Book appointment with ${tenant.name}\n`;
+        message += `   ${bookingLink}\n\n`;
       }
     }
     
-    message += `Type a salon's booking code to book with them.\n`;
+    message += `Or type a salon booking code to book with a different salon.\n`;
   }
   
   message += `\n_Type *HELP* for more options_`;
@@ -742,21 +756,21 @@ async function showReturningClientMenu(phone, client, hasUpcoming, upcomingAppt)
 }
 
 async function handleReturningClientMenu(phone, body, session) {
-  const input = body.trim().toLowerCase();
+  const input = body.trim();
   const ctx = session.context;
   
   // Option 1: See my appointment
-  if (input === '1' || input === 'see my appointment' || input === 'my appointment') {
+  if (input === '1') {
     return showClientAppointments(phone);
   }
   
   // Option 2: Reschedule
-  if (input === '2' || input === 'reschedule') {
+  if (input === '2') {
     return startReschedule(phone);
   }
   
   // Option 3: Cancel
-  if (input === '3' || input === 'cancel') {
+  if (input === '3') {
     // Get upcoming appointment to suggest cancelling
     const upcoming = await appointmentModel.findUpcomingByClientPhone(phone);
     if (upcoming) {
@@ -766,7 +780,7 @@ async function handleReturningClientMenu(phone, body, session) {
   }
   
   // Option 4: Book another / Book appointment
-  if (input === '4' || input === 'book another' || input === 'book appointment') {
+  if (input === '4') {
     if (session.tenant_id) {
       const tenant = await tenantModel.findById(session.tenant_id);
       if (tenant) {
@@ -777,7 +791,7 @@ async function handleReturningClientMenu(phone, body, session) {
   }
   
   // Handle booking code input
-  if (input.startsWith('book ')) {
+  if (input.toLowerCase().startsWith('book ')) {
     const code = body.substring(5).trim();
     if (code) {
       return startBooking(phone, code);
@@ -785,17 +799,17 @@ async function handleReturningClientMenu(phone, body, session) {
   }
   
   // Help
-  if (input === 'help') {
+  if (input.toLowerCase() === 'help') {
     return sendMessage(
       phone,
       `📖 *OnTime Client Help*\n\n` +
-      `*Commands:*\n` +
-      `• *1* or *See my appointment* - View upcoming appointment\n` +
-      `• *2* or *Reschedule* - Change your appointment date/time\n` +
-      `• *3* or *Cancel* - Cancel your appointment\n` +
-      `• *4* or *Book another* - Book new appointment\n` +
-      `• *BOOK <code>* - Book with a different salon\n\n` +
-      `You can also type the number (1, 2, 3, or 4) to select an option.`
+      `*Options:*\n` +
+      `1 - See my appointment - View upcoming appointment\n` +
+      `2 - Reschedule - Change date/time\n` +
+      `3 - Cancel - Cancel appointment\n` +
+      `4 - Book another - Book new appointment\n` +
+      `BOOK <code> - Book with a different salon\n\n` +
+      `Type the number to select an option.`
     );
   }
   
@@ -807,9 +821,15 @@ async function handleReturningClientMenu(phone, body, session) {
 
 async function startReschedule(phone) {
   // Check if client has an upcoming appointment
+  logger.info(`[RESCHEDULE DEBUG] Looking up appointment for phone: ${phone}`);
   const upcoming = await appointmentModel.findUpcomingByClientPhone(phone);
   
+  logger.info(`[RESCHEDULE DEBUG] Query result: ${JSON.stringify(upcoming)}`);
+  
   if (!upcoming) {
+    // Check if there's any appointment at all (regardless of time/status) for debugging
+    const allAppointments = await appointmentModel.findByClientPhone(phone);
+    logger.info(`[RESCHEDULE DEBUG] All appointments for client: ${JSON.stringify(allAppointments)}`);
     return sendMessage(phone, '❌ You have no upcoming appointments to reschedule.');
   }
   
@@ -824,9 +844,9 @@ async function startReschedule(phone) {
       `This appointment has already been rescheduled 3 times.\n` +
       `You cannot reschedule anymore.\n\n` +
       `*Options:*\n` +
-      `1️⃣ Keep your current appointment\n` +
-      `2️⃣ Cancel this appointment and book a new one\n\n` +
-      `Type *CANCEL ${upcoming.id}* to cancel if needed.`
+      `1 - Keep your current appointment\n` +
+      `2 - Cancel this appointment and book a new one\n\n` +
+      `Type the number to proceed.`
     );
   }
   
@@ -1004,14 +1024,17 @@ async function handleRescheduleTime(phone, body, session) {
     `Service: *${ctx.selected_service_name}*\n` +
     `New Date: *${formattedDate}*\n` +
     `New Time: *${selectedTime}*\n\n` +
-    `Type *YES* to confirm the reschedule, *NO* to cancel.`
+    `*Options:*\n` +
+    `1 - Confirm reschedule\n` +
+    `2 - Cancel reschedule\n\n` +
+    `Type the number to proceed.`
   );
 }
 
 async function handleRescheduleConfirm(phone, body, session) {
-  const input = body.trim().toLowerCase();
+  const input = body.trim();
   
-  if (input === 'no' || input === 'cancel') {
+  if (input === '2') {
     await sessionService.clearSession(phone);
     
     // Show menu again
@@ -1023,8 +1046,8 @@ async function handleRescheduleConfirm(phone, body, session) {
     return sendMessage(phone, 'Rescheduling cancelled.');
   }
   
-  if (input !== 'yes' && input !== 'confirm' && input !== 'y') {
-    return sendMessage(phone, '❌ Please type *YES* to confirm or *NO* to cancel.');
+  if (input !== '1') {
+    return sendMessage(phone, '❌ Please type *1* to confirm or *2* to cancel.');
   }
   
   const ctx = session.context;
@@ -1083,21 +1106,21 @@ async function handleRescheduleConfirm(phone, body, session) {
       let message = `✅ *Appointment Rescheduled!*\n\n`;
       message += `📅 ${formatDateLong(ctx.selected_date)} at ${ctx.selected_time}\n\n`;
       message += `What would you like to do next?\n\n`;
-      message += `1️⃣ *See my appointment*\n`;
-      message += `2️⃣ *Book another*\n`;
+      message += `1 - See my appointment\n`;
+      message += `2 - Book another\n`;
       
       // Set menu state
       await sessionService.setSession(phone, {
         role: 'client',
-        state: 'menu',
-        tenant_id: session.tenant_id,
+        state: 'menu_rescheduled',
+        tenant_id: tenant_id,
         context: {
-          client_name: client.name,
-          returning_client: true,
-          has_upcoming_appointment: true,
-          upcoming_appointment: upcoming,
-        },
+          returning: true,
+          preferred_tenant_id: tenant_id
+        }
       });
+      
+      message += `\nType the number to proceed.`;
       
       return sendMessage(phone, message);
     }
