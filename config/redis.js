@@ -1,20 +1,15 @@
-const Redis = require('ioredis');
 const logger = require('../utils/logger');
 
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: 3,
-  retryStrategy(times) {
-    const delay = Math.min(times * 200, 2000);
-    return delay;
-  },
-});
+// Redis disabled for Railway deployment
+// Using in-memory sessions instead
+const mockRedis = {
+  get: () => Promise.resolve(null),
+  set: () => Promise.resolve(),
+  del: () => Promise.resolve(),
+  exists: () => Promise.resolve(0),
+  expire: () => Promise.resolve(),
+};
 
-redis.on('connect', () => {
-  logger.info('Redis connected');
-});
+logger.info('Redis disabled - using in-memory sessions');
 
-redis.on('error', (err) => {
-  logger.error('Redis connection error', err);
-});
-
-module.exports = redis;
+module.exports = mockRedis;
