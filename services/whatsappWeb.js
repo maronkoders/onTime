@@ -46,28 +46,32 @@ function initialize(onMessageReceived) {
     }
   }
 
+  // Try different Puppeteer configurations for Railway
+  const puppeteerOptions = {
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-gpu',
+      '--single-process',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+      '--disable-web-security',
+      '--disable-features=VizDisplayCompositor',
+    ],
+  };
+
   client = new Client({
     authStrategy: new LocalAuth({
       dataPath: process.env.WHATSAPP_WEB_SESSION_PATH || './.wwebjs_auth',
     }),
-    puppeteer: {
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--single-process',
-        '--no-zygote',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-      ],
-    },
+    puppeteer: puppeteerOptions,
   });
 
   // QR Code event - show in terminal for initial setup
@@ -148,9 +152,37 @@ function initialize(onMessageReceived) {
 
   // Initialize
   logger.info('Starting WhatsApp Web client...');
+  
+  // Add more event listeners for debugging
+  client.on('loading_screen', (percent, message) => {
+    logger.info(`WhatsApp Web loading: ${percent}% - ${message}`);
+  });
+  
+  client.on('change_state', (state) => {
+    logger.info(`WhatsApp Web state changed to: ${state}`);
+  });
+  
+  client.on('disconnected', (reason) => {
+    logger.error(`WhatsApp Web disconnected: ${reason}`);
+  });
+  
+  client.on('auth_failure', (msg) => {
+    logger.error(`WhatsApp Web authentication failed: ${msg}`);
+  });
+
   client.initialize().catch((err) => {
     logger.error(`Failed to initialize WhatsApp Web client: ${err.message}`);
+    logger.error(`Full error: ${err.stack}`);
   });
+  
+  // Set a timeout to check if QR code appears
+  setTimeout(() => {
+    if (!isReady) {
+      logger.warn('WhatsApp Web client not ready after 30 seconds - checking status...');
+      logger.info(`Client initialized: ${!!client}`);
+      logger.info(`Client state: ${client ? client.info : 'N/A'}`);
+    }
+  }, 30000);
 }
 
 /**

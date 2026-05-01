@@ -48,6 +48,30 @@ app.get('/whatsapp/status', (req, res) => {
   });
 });
 
+// Manual QR code generation endpoint for debugging
+app.get('/whatsapp/qr', async (req, res) => {
+  const { destroy } = require('./services/whatsappWeb');
+  
+  try {
+    // Destroy existing client
+    await destroy();
+    
+    // Reinitialize with QR code
+    const { routeMessage } = require('./controllers/webhook');
+    whatsappService.initialize(routeMessage);
+    
+    res.json({
+      message: 'QR code generation initiated. Check logs in 5-10 seconds.',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 // Twilio WhatsApp webhook
 app.post('/webhook', webhookController.handleIncoming);
 
