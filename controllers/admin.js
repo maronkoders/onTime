@@ -91,9 +91,9 @@ async function handleAdminMessage(phone, body, session, tenant) {
         `  (Brian H Thomas)\n\n` +
         `✅ *To reactivate:*\n` +
         `1. Make payment using above details\n` +
-        `2. Reply with: *PAID <amount> <method>*\n` +
-        `   Example: *PAID 12 ecocash*\n\n` +
-        `Your account will be activated within 24 hours! 🚀`;
+        `2. Send Proof of Payment to: *https:/wa.me/+263775635191*\n` +
+        `   Example: *ABC salon PAID 5 innbucks*\n\n` +
+        `Your account will be activated within 30 minutes! 🚀`;
     } else if (subscriptionStatus.subscriptionEnded) {
       const subEndDate = new Date(tenant.subscription_ends_at).toLocaleDateString();
       message += `Your subscription expired on ${subEndDate}.\n\n` +
@@ -108,9 +108,9 @@ async function handleAdminMessage(phone, body, session, tenant) {
         `  (Brian H Thomas)\n\n` +
         `✅ *To renew:*\n` +
         `1. Make payment using above details\n` +
-        `2. Reply with: *PAID <amount> <method>*\n` +
-        `   Example: *PAID 5 innbucks*\n\n` +
-        `Your subscription will be renewed within 24 hours! 🚀`;
+        `2. Send Proof of Payment to: *https:/wa.me/+263775635191*\n` +
+        `   Example: *ABC salon PAID 5 innbucks*\n\n` +
+        `Your subscription will be renewed within an 30 minutes! 🚀`;
     } else {
       message += subscriptionStatus.reason || 'Access denied.';
     }
