@@ -28,6 +28,23 @@ function initialize(onMessageReceived) {
   }
 
   messageHandler = onMessageReceived;
+  
+  // Force QR code generation on Railway by clearing session
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    logger.info('Railway environment detected - forcing QR code generation');
+    const fs = require('fs');
+    const path = process.env.WHATSAPP_WEB_SESSION_PATH || './.wwebjs_auth';
+    
+    // Clear existing session to force QR code
+    if (fs.existsSync(path)) {
+      try {
+        fs.rmSync(path, { recursive: true, force: true });
+        logger.info(`Cleared existing WhatsApp Web session at ${path}`);
+      } catch (err) {
+        logger.warn(`Failed to clear session: ${err.message}`);
+      }
+    }
+  }
 
   client = new Client({
     authStrategy: new LocalAuth({
@@ -43,14 +60,33 @@ function initialize(onMessageReceived) {
         '--no-first-run',
         '--no-zygote',
         '--disable-gpu',
+        '--single-process',
+        '--no-zygote',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI,BlinkGenPropertyTrees',
       ],
     },
   });
 
   // QR Code event - show in terminal for initial setup
   client.on('qr', (qr) => {
-    logger.info('WhatsApp Web QR Code received. Scan with your phone:');
+    logger.info('='.repeat(50));
+    logger.info('WHATSAPP WEB QR CODE RECEIVED');
+    logger.info('='.repeat(50));
+    logger.info('Scan this QR code with your phone:');
+    logger.info('WhatsApp → Linked Devices → Link a device');
+    logger.info('');
+    
+    // Generate QR in terminal
     qrcode.generate(qr, { small: true });
+    
+    // Also log the raw QR code text for manual scanning
+    logger.info('');
+    logger.info('Raw QR code (if terminal QR not visible):');
+    logger.info(qr);
+    logger.info('='.repeat(50));
   });
 
   // Ready event
