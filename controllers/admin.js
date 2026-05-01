@@ -91,7 +91,7 @@ async function handleAdminMessage(phone, body, session, tenant) {
         `  (Brian H Thomas)\n\n` +
         `✅ *To reactivate:*\n` +
         `1. Make payment using above details\n` +
-        `2. Send Proof of Payment to: *https:/wa.me/+263775635191*\n` +
+        `2. Send Proof of Payment to: *https://wa.me/+263775635191*\n` +
         `   Example: *ABC salon PAID 5 innbucks*\n\n` +
         `Your account will be activated within 30 minutes! 🚀`;
     } else if (subscriptionStatus.subscriptionEnded) {
@@ -108,7 +108,7 @@ async function handleAdminMessage(phone, body, session, tenant) {
         `  (Brian H Thomas)\n\n` +
         `✅ *To renew:*\n` +
         `1. Make payment using above details\n` +
-        `2. Send Proof of Payment to: *https:/wa.me/+263775635191*\n` +
+        `2. Send Proof of Payment to: *https://wa.me/+263775635191*\n` +
         `   Example: *ABC salon PAID 5 innbucks*\n\n` +
         `Your subscription will be renewed within an 30 minutes! 🚀`;
     } else {
