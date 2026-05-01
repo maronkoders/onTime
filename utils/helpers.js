@@ -7,6 +7,8 @@ function generateBookingCode(length = 8) {
 function normalizePhone(phone) {
   // Remove whatsapp: prefix if present (Twilio format)
   let cleaned = phone.replace(/^whatsapp:/, '');
+  // Remove WhatsApp Web ID suffixes (@c.us, @g.us, @lid, etc.)
+  cleaned = cleaned.replace(/@[\w.]+$/, '');
   // Remove spaces, dashes, parentheses
   cleaned = cleaned.replace(/[\s\-\(\)]/g, '');
   // Ensure it starts with +

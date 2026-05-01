@@ -1,10 +1,17 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
 
+// Debug: Log what DATABASE_URL looks like
+const dbUrl = process.env.DATABASE_URL;
+logger.info(`DATABASE_URL type: ${typeof dbUrl}`);
+logger.info(`DATABASE_URL length: ${dbUrl ? dbUrl.length : 0}`);
+logger.info(`DATABASE_URL starts with: ${dbUrl ? dbUrl.substring(0, 30) : 'undefined'}...`);
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: dbUrl,
 });
 
 pool.on('error', (err) => {

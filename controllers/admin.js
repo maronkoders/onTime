@@ -226,6 +226,18 @@ async function handleAdminState(phone, body, session, tenant) {
 // --- Registration Flow ---
 
 async function startRegistration(phone) {
+  // Check if user already has a registered salon
+  const existingTenant = await tenantModel.findByPhone(phone);
+  if (existingTenant) {
+    return sendMessage(
+      phone,
+      `✅ You already have a registered salon: *${existingTenant.name}*\n\n` +
+        `📍 Location: ${existingTenant.location || 'Not set'}\n` +
+        `🔗 Booking Code: *${existingTenant.booking_code}*\n\n` +
+        `Type *HELP* to see your salon menu and manage your business.`
+    );
+  }
+
   await sessionService.setSession(phone, {
     role: 'admin',
     state: 'awaiting_salon_name',
@@ -353,14 +365,28 @@ async function handleFirstServiceDuration(phone, body, session) {
 
 async function handleFirstServicePrice(phone, body, session) {
   const price = parseFloat(body.trim().replace('$', ''));
-  if (isNaN(price) || price < 0) {
-    return sendMessage(phone, 'Please provide a valid price (e.g., "15.00").');
+  if (isNaN(price) || price <= 0 || price > 1000) {
+    return sendMessage(phone, 'Please provide a valid price between $0.01 and $1000.\n_Type *BACK* to change the duration_');
   }
 
   const ctx = session.context;
   const bookingCode = generateBookingCode();
 
   try {
+    // Check if tenant already exists (prevents duplicate registration)
+    const existingTenant = await tenantModel.findByPhone(phone);
+    if (existingTenant) {
+      // Clear the stale registration session
+      await sessionService.clearSession(phone);
+      return sendMessage(
+        phone,
+        `✅ *Registration Complete!*\n\n` +
+          `Your salon *${existingTenant.name}* is already registered and ready to use!\n\n` +
+          `📍 Location: ${existingTenant.location || 'Not set'}\n` +
+          `🔗 Booking Code: *${existingTenant.booking_code}*\n\n` +
+          `Type *HELP* to see your salon menu and manage your business.`
+      );
+    }
     // Create the tenant
     const tenant = await tenantModel.create({
       name: ctx.salon_name,
@@ -420,6 +446,19 @@ async function handleFirstServicePrice(phone, body, session) {
     );
   } catch (err) {
     logger.error(`Registration error: ${err.message}`);
+
+    // Check for duplicate key error (user already registered)
+    if (err.message.includes('duplicate key') || err.message.includes('tenants_owner_phone_key')) {
+      // Clear any stale session
+      await sessionService.clearSession(phone);
+      return sendMessage(
+        phone,
+        `⚠️ *Registration Issue Detected*\n\n` +
+          `It looks like you may already have a salon registered with this number.\n\n` +
+          `Type *HELP* to access your salon menu, or contact support if you need assistance.`
+      );
+    }
+
     return sendMessage(phone, 'Sorry, there was an error during registration. Please try again with *register*.');
   }
 }

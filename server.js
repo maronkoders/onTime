@@ -10,6 +10,8 @@ const { startExpiryReminderJob } = require('./services/subscriptionReminder');
 const webhookController = require('./controllers/webhook');
 const simulatorRoutes = require('./routes/simulator');
 const superAdminRoutes = require('./routes/superAdmin');
+const whatsappService = require('./services/whatsapp');
+const providerConfig = require('./config/whatsappProvider');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +37,15 @@ app.use(morgan('combined', {
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// WhatsApp provider status
+app.get('/whatsapp/status', (req, res) => {
+  const status = whatsappService.getStatus();
+  res.json({
+    ...status,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Twilio WhatsApp webhook
@@ -76,7 +87,14 @@ async function start() {
       logger.info(`Health check: http://localhost:${PORT}/health`);
       logger.info(`WhatsApp Simulator: http://localhost:${PORT}/simulator`);
       logger.info(`Super Admin Dashboard: http://localhost:${PORT}/admin/login`);
+      logger.info(`WhatsApp Provider: ${providerConfig.provider}`);
     });
+
+    // Initialize WhatsApp provider (needed for WhatsApp Web)
+    if (providerConfig.isWhatsAppWeb) {
+      const { routeMessage } = require('./controllers/webhook');
+      whatsappService.initialize(routeMessage);
+    }
   } catch (err) {
     logger.error(`Failed to start server: ${err.message}`, { stack: err.stack });
     process.exit(1);

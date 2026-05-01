@@ -134,4 +134,4 @@ async function routeMessage(phone, body) {
   return clientController.handleClientMessage(phone, body, session);
 }
 
-module.exports = { handleIncoming };
+module.exports = { handleIncoming, routeMessage };

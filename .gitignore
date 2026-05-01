@@ -2,3 +2,7 @@ node_modules/
 .env
 logs/
 *.log
+
+# WhatsApp Web session data (authentication)
+.wwebjs_auth/
+.wwebjs_cache/

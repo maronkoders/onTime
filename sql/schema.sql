@@ -43,6 +43,26 @@ CREATE TABLE IF NOT EXISTS appointments (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- System settings table
+CREATE TABLE IF NOT EXISTS system_settings (
+    key VARCHAR(255) PRIMARY KEY,
+    value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Insert default settings
+INSERT INTO system_settings (key, value) VALUES
+    ('trial_period_days', '14'),
+    ('monthly_price_usd', '5'),
+ ('quarterly_price_usd', '12'),
+    ('biannual_price_usd', '22'),
+    ('ecocash_number', '0775635191'),
+    ('innbucks_number', '0775635191'),
+    ('payment_recipient', 'Brian H Thomas'),
+    ('support_contact', '0775635191')
+ON CONFLICT (key) DO NOTHING;
+
 CREATE INDEX IF NOT EXISTS idx_appointments_tenant_date ON appointments(tenant_id, start_time);
 CREATE INDEX IF NOT EXISTS idx_tenants_booking_code ON tenants(booking_code);
 CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status);
