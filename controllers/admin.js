@@ -1,5 +1,6 @@
 const tenantModel = require('../models/tenant');
 const subscriptionModel = require('../models/subscription');
+const systemSettingsModel = require('../models/systemSettings');
 const serviceModel = require('../models/service');
 const appointmentModel = require('../models/appointment');
 const sessionService = require('../services/session');
@@ -78,7 +79,7 @@ async function handleAdminMessage(phone, body, session, tenant) {
         `Please contact support to reactivate your account.`;
     } else if (subscriptionStatus.trialEnded) {
       const trialEndDate = new Date(tenant.trial_ends_at).toLocaleDateString();
-      message += `Your *14-day free trial* ended on ${trialEndDate}.\n\n` +
+      message += `Your *free trial* ended on ${trialEndDate}.\n\n` +
         `💡 *Don't lose your clients!*\n` +
         `Your booking link is no longer accepting appointments. Reactivate now to keep your salon running 24/7.\n\n` +
         `📦 *Affordable Plans:*\n` +
@@ -377,9 +378,10 @@ async function handleFirstServicePrice(phone, body, session) {
       price,
     });
 
-    // Create subscription record with 14-day trial
+    // Get dynamic trial period days and create subscription
+    const trialPeriodDays = await systemSettingsModel.getTrialPeriodDays();
     const trialExpiryDate = new Date();
-    trialExpiryDate.setDate(trialExpiryDate.getDate() + 14);
+    trialExpiryDate.setDate(trialExpiryDate.getDate() + trialPeriodDays);
     
     await subscriptionModel.create({
       tenantId: tenant.id,
@@ -402,7 +404,7 @@ async function handleFirstServicePrice(phone, body, session) {
       `✅ *Registration Complete!*\n\n` +
         `👔 You are now the verified owner of *${tenant.name}*!\n\n` +
         `🎁 *FREE TRIAL PERIOD* 🎁\n` +
-        `You have *14 days* to try all features for FREE!\n` +
+        `You have *${trialPeriodDays} days* to try all features for FREE!\n` +
         `Your trial expires on: *${trialExpiryDate.toLocaleDateString()}*\n\n` +
         `📍 Location: ${tenant.location}\n` +
         `🔗 Booking Code: *${bookingCode}*\n` +

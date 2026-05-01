@@ -5,6 +5,7 @@ const tenantModel = require('../models/tenant');
 const appointmentModel = require('../models/appointment');
 const serviceModel = require('../models/service');
 const subscriptionFeeModel = require('../models/subscriptionFee');
+const systemSettingsModel = require('../models/systemSettings');
 const logger = require('../utils/logger');
 
 // Login page (GET)
@@ -78,12 +79,14 @@ router.get('/subscriptions', requireSuperAdmin, async (req, res) => {
 router.get('/settings', requireSuperAdmin, async (req, res) => {
   try {
     let subscriptionFees = [];
+    let trialPeriodDays = systemSettingsModel.DEFAULT_TRIAL_PERIOD_DAYS;
     try {
       subscriptionFees = await subscriptionFeeModel.getAll();
+      trialPeriodDays = await systemSettingsModel.getTrialPeriodDays();
     } catch (err) {
-      logger.warn(`Could not load subscription fees: ${err.message}`);
+      logger.warn(`Could not load settings: ${err.message}`);
     }
-    res.send(getSettingsPage(subscriptionFees, req.session.username));
+    res.send(getSettingsPage(subscriptionFees, trialPeriodDays, req.session.username));
   } catch (err) {
     logger.error(`Settings error: ${err.message}`);
     res.status(500).send('Error loading settings');
@@ -163,6 +166,32 @@ router.post('/settings/subscription-fees/:id/delete', requireSuperAdmin, async (
   } catch (err) {
     logger.error(`Delete subscription fee error: ${err.message}`);
     res.status(500).send('Error deleting subscription fee');
+  }
+});
+
+// Update trial period
+router.post('/settings/trial-period', requireSuperAdmin, async (req, res) => {
+  try {
+    const { days } = req.body;
+    const daysNum = parseInt(days, 10);
+    
+    if (isNaN(daysNum) || daysNum < 1) {
+      let subscriptionFees = [];
+      let trialPeriodDays = systemSettingsModel.DEFAULT_TRIAL_PERIOD_DAYS;
+      try {
+        subscriptionFees = await subscriptionFeeModel.getAll();
+        trialPeriodDays = await systemSettingsModel.getTrialPeriodDays();
+      } catch (err) {
+        logger.warn(`Could not load settings: ${err.message}`);
+      }
+      return res.send(getSettingsPage(subscriptionFees, trialPeriodDays, req.session.username, 'Trial period must be at least 1 day'));
+    }
+    
+    await systemSettingsModel.setTrialPeriodDays(daysNum);
+    res.redirect('/admin/settings');
+  } catch (err) {
+    logger.error(`Update trial period error: ${err.message}`);
+    res.status(500).send('Error updating trial period');
   }
 });
 
@@ -1904,7 +1933,7 @@ function getSubscriptionsPage(salons, activeTab, username) {
 </html>`;
 }
 
-function getSettingsPage(subscriptionFees, username, error = null, success = null) {
+function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = null, success = null) {
   const feeRows = subscriptionFees.map(fee => `
     <tr>
       <td><strong>${escapeHtml(fee.name)}</strong></td>
@@ -2221,6 +2250,24 @@ function getSettingsPage(subscriptionFees, username, error = null, success = nul
               <input type="password" id="confirmPassword" name="confirmPassword" required minlength="6">
             </div>
             <button type="submit" class="btn btn-primary">Update Password</button>
+          </form>
+        </div>
+      </div>
+      
+      <div class="settings-card">
+        <div class="card-header">
+          <h3>🎁 Trial Period</h3>
+        </div>
+        <div class="card-body">
+          <form method="POST" action="/admin/settings/trial-period">
+            <div class="form-group">
+              <label for="trialDays">Trial Duration (Days)</label>
+              <input type="number" id="trialDays" name="days" value="${trialPeriodDays}" required min="1" max="365">
+              <p style="color: #64748b; font-size: 13px; margin-top: 6px;">
+                Number of days new salons get for free trial. Default: 14 days.
+              </p>
+            </div>
+            <button type="submit" class="btn btn-primary">Update Trial Period</button>
           </form>
         </div>
       </div>
