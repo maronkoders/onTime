@@ -46,19 +46,20 @@ function initialize(onMessageReceived) {
     }
   }
 
+  // Import puppeteer to get the built-in Chrome path
+  const puppeteer = require('puppeteer');
+  
   // Try different Puppeteer configurations for Railway
   const puppeteerOptions = {
-    headless: 'new', // Use new headless mode
+    headless: true, // Use classic headless mode for better compatibility
     executablePath: process.env.CHROME_BIN || 
-                  process.env.RAILWAY_ENVIRONMENT ? '/usr/bin/google-chrome' : 
-                  undefined, // Use Railway's Chrome if available
+                  (process.env.RAILWAY_ENVIRONMENT ? puppeteer.executablePath() : undefined),
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
-      '--no-zygote',
       '--disable-gpu',
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
@@ -67,48 +68,30 @@ function initialize(onMessageReceived) {
       '--disable-web-security',
       '--disable-extensions',
       '--disable-plugins',
-      '--disable-images',
-      '--disable-javascript',
       '--disable-default-apps',
       '--disable-translate',
       '--disable-device-discovery-notifications',
       '--disable-sync',
       '--metrics-recording-only',
       '--no-default-browser-check',
-      '--no-first-run',
       '--disable-background-mode',
       '--disable-background-networking',
-      '--disable-default-apps',
-      '--disable-extensions',
-      '--disable-sync',
-      '--disable-translate',
       '--hide-scrollbars',
       '--mute-audio',
-      '--no-zygote',
       '--disable-ipc-flooding-protection',
-      '--disable-renderer-backgrounding',
-      '--disable-features=TranslateUI,BlinkGenPropertyTrees',
       '--disable-logging',
       '--disable-gpu-early-init',
-      '--disable-backgrounding-occluded-windows',
       '--disable-client-side-phishing-detection',
       '--disable-component-extensions-with-background-pages',
-      '--disable-default-apps',
-      '--disable-extensions',
-      '--disable-features=TranslateUI',
       '--disable-hang-monitor',
-      '--disable-ipc-flooding-protection',
       '--disable-popup-blocking',
       '--disable-prompt-on-repost',
-      '--disable-renderer-backgrounding',
-      '--disable-sync',
       '--force-color-profile=srgb',
-      '--metrics-recording-only',
-      '--no-first-run',
       '--enable-automation',
       '--password-store=basic',
       '--use-mock-keychain',
-      '--single-process', // Use single process to avoid multi-process issues
+      '--remote-debugging-port=9222',
+      '--disable-features=IsolateOrigins,site-per-process',
     ],
   };
 
