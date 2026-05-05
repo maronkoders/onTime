@@ -50,25 +50,134 @@ app.get('/whatsapp/status', (req, res) => {
 
 // Manual QR code generation endpoint for debugging
 app.get('/whatsapp/qr', async (req, res) => {
-  const { destroy } = require('./services/whatsappWeb');
+  const whatsappWebService = require('./services/whatsappWeb');
   
   try {
     // Destroy existing client
-    await destroy();
+    await whatsappWebService.destroy();
     
     // Reinitialize with QR code
     const { routeMessage } = require('./controllers/webhook');
     whatsappService.initialize(routeMessage);
     
-    res.json({
-      message: 'QR code generation initiated. Check logs in 5-10 seconds.',
-      timestamp: new Date().toISOString(),
-    });
+    res.redirect('/qr');
   } catch (err) {
     res.status(500).json({
       error: err.message,
       timestamp: new Date().toISOString(),
     });
+  }
+});
+
+// The user-facing QR code display endpoint
+app.get('/qr', async (req, res) => {
+  const qrString = whatsappService.getLatestQr();
+  const status = whatsappService.getStatus();
+  
+  if (status.ready) {
+    return res.send(`
+      <html>
+        <head>
+          <title>WhatsApp Status</title>
+          <style>
+            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5; }
+            .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+            .status-icon { font-size: 4rem; color: #25d366; margin-bottom: 1rem; }
+            h1 { color: #111b21; }
+            p { color: #667781; }
+            .btn { display: inline-block; background: #008069; color: white; padding: 0.5rem 1rem; border-radius: 20px; text-decoration: none; margin-top: 1rem; }
+          </style>
+          <meta http-equiv="refresh" content="30">
+        </head>
+        <body>
+          <div class="card">
+            <div class="status-icon">✅</div>
+            <h1>WhatsApp is Connected</h1>
+            <p>The client is already authenticated and ready.</p>
+            <a href="/whatsapp/status" class="btn">Check Status JSON</a>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  if (!qrString) {
+    return res.send(`
+      <html>
+        <head>
+          <title>WhatsApp QR Code</title>
+          <style>
+            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5; }
+            .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+            .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #008069; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; margin: 1rem auto; }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            h1 { color: #111b21; }
+            p { color: #667781; }
+          </style>
+          <meta http-equiv="refresh" content="5">
+        </head>
+        <body>
+          <div class="card">
+            <div class="spinner"></div>
+            <h1>Waiting for QR Code...</h1>
+            <p>The WhatsApp client is initializing. This page will refresh automatically.</p>
+            <p><small>If this takes too long, try <a href="/whatsapp/qr">restarting the client</a>.</small></p>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  try {
+    const QRCode = require('qrcode');
+    const qrDataUrl = await QRCode.toDataURL(qrString);
+    
+    res.send(`
+      <html>
+        <head>
+          <title>Scan WhatsApp QR Code</title>
+          <style>
+            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: #f0f2f5; margin: 0; padding: 20px; }
+            .card { background: white; padding: 2.5rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 400px; width: 100%; }
+            h1 { color: #111b21; margin-bottom: 0.5rem; font-size: 1.5rem; }
+            p { color: #667781; margin-bottom: 1.5rem; line-height: 1.4; }
+            .qr-container { background: white; padding: 10px; border: 1px solid #e9edef; border-radius: 8px; display: inline-block; margin-bottom: 1.5rem; }
+            .qr-image { display: block; width: 264px; height: 264px; }
+            .instructions { text-align: left; background: #f8f9fa; padding: 1rem; border-radius: 8px; font-size: 0.9rem; }
+            .instructions ol { margin: 0; padding-left: 1.5rem; color: #3b4a54; }
+            .instructions li { margin-bottom: 0.5rem; }
+            .footer { margin-top: 2rem; color: #8696a0; font-size: 0.8rem; }
+          </style>
+          <meta http-equiv="refresh" content="60">
+        </head>
+        <body>
+          <div class="card">
+            <h1>Link WhatsApp</h1>
+            <p>Scan this code with your phone to use OnTime WhatsApp features.</p>
+            
+            <div class="qr-container">
+              <img src="${qrDataUrl}" alt="WhatsApp QR Code" class="qr-image" />
+            </div>
+
+            <div class="instructions">
+              <ol>
+                <li>Open WhatsApp on your phone</li>
+                <li>Tap <b>Menu</b> or <b>Settings</b></li>
+                <li>Select <b>Linked Devices</b></li>
+                <li>Tap on <b>Link a Device</b></li>
+                <li>Point your phone to this screen to capture the code</li>
+              </ol>
+            </div>
+            
+            <div class="footer">
+              This code will refresh automatically.
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    res.status(500).send(`Error generating QR code image: ${err.message}`);
   }
 });
 

@@ -59,9 +59,20 @@ function getStatus() {
   };
 }
 
+/**
+ * Get the latest QR code
+ */
+function getLatestQr() {
+  if (provider.isWhatsAppWeb) {
+    return whatsappWebService.getLatestQr();
+  }
+  return null;
+}
+
 module.exports = {
   sendMessage,
   initialize,
   getStatus,
+  getLatestQr,
   provider, // Expose provider config for advanced usage
 };

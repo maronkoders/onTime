@@ -16,6 +16,7 @@ let client = null;
 let isReady = false;
 let messageHandler = null; // Callback for incoming messages
 const pendingReplies = new Map(); // Store original WhatsApp IDs for replying
+let latestQr = null; // Store latest QR code string for web display
 
 /**
  * Initialize the WhatsApp Web client
@@ -114,6 +115,9 @@ function initialize(onMessageReceived) {
     // Generate QR in terminal
     qrcode.generate(qr, { small: true });
     
+    // Store for web endpoint
+    latestQr = qr;
+    
     // Also log the raw QR code text for manual scanning
     logger.info('');
     logger.info('Raw QR code (if terminal QR not visible):');
@@ -124,6 +128,7 @@ function initialize(onMessageReceived) {
   // Ready event
   client.on('ready', () => {
     isReady = true;
+    latestQr = null; // Clear QR once connected
     logger.info('WhatsApp Web client is ready and connected');
   });
 
@@ -280,13 +285,22 @@ async function destroy() {
     await client.destroy();
     client = null;
     isReady = false;
+    latestQr = null;
     logger.info('WhatsApp Web client destroyed');
   }
+}
+
+/**
+ * Get the latest QR code string
+ */
+function getLatestQr() {
+  return latestQr;
 }
 
 module.exports = {
   initialize,
   sendMessage,
   getStatus,
+  getLatestQr,
   destroy,
 };
