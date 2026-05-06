@@ -214,12 +214,13 @@ async function start() {
   });
 
   try {
-    // 2. Initialize database schema in background
+    // 2. Initialize database schema and run migrations in background
     try {
-      await initDatabase();
-      logger.info('Database initialized');
+      const { runMigrations } = require('./scripts/migrate-all');
+      await runMigrations();
+      logger.info('Database migrations completed');
     } catch (dbErr) {
-      logger.warn(`Database not available — server started without it. Error: ${dbErr.message}`);
+      logger.warn(`Database migration issue — server started but some tables might be missing. Error: ${dbErr.message}`);
       logger.warn('Make sure PostgreSQL is running and DATABASE_URL is correct in .env');
     }
 

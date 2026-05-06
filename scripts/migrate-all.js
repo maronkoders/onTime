@@ -141,11 +141,18 @@ async function runMigrations() {
     }
     
     console.log('✅ All migrations completed successfully!');
-    process.exit(0);
+    return true;
   } catch (err) {
     console.error('\n❌ Migration failed:', err.message);
-    process.exit(1);
+    throw err;
   }
 }
 
-runMigrations();
+// Only run automatically if called directly
+if (require.main === module) {
+  runMigrations()
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
+}
+
+module.exports = { runMigrations };
