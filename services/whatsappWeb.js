@@ -52,47 +52,15 @@ function initialize(onMessageReceived) {
   
   // Try different Puppeteer configurations for Railway
   const puppeteerOptions = {
-    headless: true, // Use classic headless mode for better compatibility
+    headless: true,
     executablePath: process.env.CHROME_BIN || 
                   (process.env.RAILWAY_ENVIRONMENT ? puppeteer.executablePath() : undefined),
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
       '--disable-gpu',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor',
-      '--disable-web-security',
-      '--disable-extensions',
-      '--disable-plugins',
-      '--disable-default-apps',
-      '--disable-translate',
-      '--disable-device-discovery-notifications',
-      '--disable-sync',
-      '--metrics-recording-only',
-      '--no-default-browser-check',
-      '--disable-background-mode',
-      '--disable-background-networking',
-      '--hide-scrollbars',
-      '--mute-audio',
-      '--disable-ipc-flooding-protection',
-      '--disable-logging',
-      '--disable-gpu-early-init',
-      '--disable-client-side-phishing-detection',
-      '--disable-component-extensions-with-background-pages',
-      '--disable-hang-monitor',
-      '--disable-popup-blocking',
-      '--disable-prompt-on-repost',
-      '--force-color-profile=srgb',
-      '--enable-automation',
-      '--password-store=basic',
-      '--use-mock-keychain',
-      '--remote-debugging-port=9222',
-      '--disable-features=IsolateOrigins,site-per-process',
+      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     ],
   };
 
@@ -100,6 +68,10 @@ function initialize(onMessageReceived) {
     authStrategy: new LocalAuth({
       dataPath: process.env.WHATSAPP_WEB_SESSION_PATH || './.wwebjs_auth',
     }),
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+    },
     puppeteer: puppeteerOptions,
   });
 
