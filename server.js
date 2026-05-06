@@ -39,6 +39,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Root redirect
+app.get('/', (req, res) => {
+  res.redirect('/admin/login');
+});
+
 // WhatsApp provider status
 app.get('/whatsapp/status', (req, res) => {
   const status = whatsappService.getStatus();
@@ -198,39 +203,38 @@ app.use((err, req, res, next) => {
 
 // Start server
 async function start() {
+  // 1. Start listening immediately (crucial for Railway health checks)
+  const server = app.listen(PORT, () => {
+    logger.info(`OnTime server running on port ${PORT}`);
+    logger.info(`Webhook URL: http://localhost:${PORT}/webhook`);
+    logger.info(`Health check: http://localhost:${PORT}/health`);
+    logger.info(`WhatsApp Simulator: http://localhost:${PORT}/simulator`);
+    logger.info(`Super Admin Dashboard: http://localhost:${PORT}/admin/login`);
+    logger.info(`WhatsApp Provider: ${providerConfig.provider}`);
+  });
+
   try {
-    // Initialize database schema (non-fatal if DB is unavailable)
+    // 2. Initialize database schema in background
     try {
       await initDatabase();
       logger.info('Database initialized');
     } catch (dbErr) {
-      logger.warn(`Database not available — server will start without it. Error: ${dbErr.message}`);
+      logger.warn(`Database not available — server started without it. Error: ${dbErr.message}`);
       logger.warn('Make sure PostgreSQL is running and DATABASE_URL is correct in .env');
     }
 
-    // Start daily notification cron job
+    // 3. Start background jobs
     startDailyNotifications();
-
-    // Start subscription expiry reminder cron job
     startExpiryReminderJob();
 
-    app.listen(PORT, () => {
-      logger.info(`OnTime server running on port ${PORT}`);
-      logger.info(`Webhook URL: http://localhost:${PORT}/webhook`);
-      logger.info(`Health check: http://localhost:${PORT}/health`);
-      logger.info(`WhatsApp Simulator: http://localhost:${PORT}/simulator`);
-      logger.info(`Super Admin Dashboard: http://localhost:${PORT}/admin/login`);
-      logger.info(`WhatsApp Provider: ${providerConfig.provider}`);
-    });
-
-    // Initialize WhatsApp provider (needed for WhatsApp Web)
+    // 4. Initialize WhatsApp provider (needed for WhatsApp Web)
     if (providerConfig.isWhatsAppWeb) {
       const { routeMessage } = require('./controllers/webhook');
       whatsappService.initialize(routeMessage);
     }
   } catch (err) {
-    logger.error(`Failed to start server: ${err.message}`, { stack: err.stack });
-    process.exit(1);
+    logger.error(`Error during background initialization: ${err.message}`, { stack: err.stack });
+    // Don't exit(1) here as the server is already listening and might still work for some routes
   }
 }
 

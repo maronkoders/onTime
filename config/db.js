@@ -12,6 +12,7 @@ logger.info(`DATABASE_URL starts with: ${dbUrl ? dbUrl.substring(0, 30) : 'undef
 
 const pool = new Pool({
   connectionString: dbUrl,
+  ssl: dbUrl && dbUrl.includes('railway') ? { rejectUnauthorized: false } : false
 });
 
 pool.on('error', (err) => {
