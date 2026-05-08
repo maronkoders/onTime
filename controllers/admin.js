@@ -43,37 +43,37 @@ async function handleAdminMessage(phone, body, session, tenant) {
     const { sendMessage } = require('../services/whatsapp');
     return sendMessage(
       phone,
-      `👋 Welcome to *OnTime* — your salon appointment assistant on WhatsApp!\n\n` +
-        `*For Clients:*\n` +
-        `📅 *Book* — Use the booking link from your salon to schedule an appointment\n` +
-        `📋 *My appointment* — View your upcoming bookings\n` +
-        `❌ *Cancel <id>* — Cancel a booking\n\n` +
-        `*For Salon Owners:*\n` +
-        `Type *REGISTER* to set up your salon.\n\n` +
-        `Get started now!`
+      `👋 Welcome to *OnTime* — your salon booking assistant!\n\n` +
+      `*For Clients:*\n` +
+      `📅 *Book* — Use the booking link from your salon to schedule an appointment\n` +
+      `📋 *My appointment* — View your upcoming bookings\n` +
+      `❌ *Cancel <id>* — Cancel a booking\n\n` +
+      `*For Salon Owners:*\n` +
+      `Type *REGISTER* to set up your salon.\n\n` +
+      `Get started now!`
     );
   }
 
   // Check subscription status
   const subscriptionStatus = tenantModel.getSubscriptionStatus(tenant);
   let lowerBody = body.toLowerCase().trim();
-  
+
   // Handle global BACK command - return to main menu
   if (lowerBody === 'back') {
     await sessionService.clearSession(phone);
     return showHelp(phone, tenant);
   }
-  
+
   // If subscription expired/deactivated, only allow payment-related commands
   if (!subscriptionStatus.valid) {
     // Check if this is a payment confirmation command
     if (lowerBody.startsWith('paid ')) {
       return handlePaymentConfirmation(phone, tenant, body);
     }
-    
+
     // Block all other commands and show payment message
     let message = `⛔ *Access Denied*\n\n`;
-    
+
     if (subscriptionStatus.reason === 'Account deactivated') {
       message += `Your salon account has been deactivated.\n\n` +
         `Please contact support to reactivate your account.`;
@@ -114,7 +114,7 @@ async function handleAdminMessage(phone, body, session, tenant) {
     } else {
       message += subscriptionStatus.reason || 'Access denied.';
     }
-    
+
     return sendMessage(phone, message);
   }
 
@@ -232,9 +232,9 @@ async function startRegistration(phone) {
     return sendMessage(
       phone,
       `✅ You already have a registered salon: *${existingTenant.name}*\n\n` +
-        `📍 Location: ${existingTenant.location || 'Not set'}\n` +
-        `🔗 Booking Code: *${existingTenant.booking_code}*\n\n` +
-        `Type *HELP* to see your salon menu and manage your business.`
+      `📍 Location: ${existingTenant.location || 'Not set'}\n` +
+      `🔗 Booking Code: *${existingTenant.booking_code}*\n\n` +
+      `Type *HELP* to see your salon menu and manage your business.`
     );
   }
 
@@ -284,13 +284,13 @@ async function handleSalonName(phone, body, session) {
   if (name.length < 2) {
     return sendMessage(phone, 'Please provide a valid salon name (at least 2 characters).\n_Type *BACK* to cancel_');
   }
-  
+
   // Check if salon name already exists
   const existingTenant = await tenantModel.findByName(name);
   if (existingTenant) {
     return sendMessage(phone, `❌ Sorry, the salon name "${name}" is already registered. Please choose a different name.\n_Type *BACK* to cancel_`);
   }
-  
+
   await sessionService.updateSession(phone, {
     state: 'awaiting_location',
     context: { salon_name: name, prev_state: 'awaiting_salon_name' },
@@ -309,7 +309,7 @@ async function handleLocation(phone, body, session) {
   });
   return sendMessage(
     phone,
-    `📍 Location set!\n\nNow set your *working hours*. You can:\n\n1️⃣ Type *DEFAULT* to use:\nMon-Sat: 09:00-17:00, Sun: closed\n\n2️⃣ Or type custom hours like:\nmon-fri 08:00-18:00, sat 09:00-14:00, sun closed\n_Type *BACK* to change your location_`
+    `📍 Location set!\n\nNow set your *working hours*. You can:\n\n1️⃣ Type *DEFAULT* to use:\nMon-Sat: 09:00-17:00,\n Sun: closed\n\n2️⃣ Or type custom hours like:\nmon-fri 08:00-18:00,\nsat 09:00-14:00,\nsun closed\n_Type *BACK* to change your location_`
   );
 }
 
@@ -381,10 +381,10 @@ async function handleFirstServicePrice(phone, body, session) {
       return sendMessage(
         phone,
         `✅ *Registration Complete!*\n\n` +
-          `Your salon *${existingTenant.name}* is already registered and ready to use!\n\n` +
-          `📍 Location: ${existingTenant.location || 'Not set'}\n` +
-          `🔗 Booking Code: *${existingTenant.booking_code}*\n\n` +
-          `Type *HELP* to see your salon menu and manage your business.`
+        `Your salon *${existingTenant.name}* is already registered and ready to use!\n\n` +
+        `📍 Location: ${existingTenant.location || 'Not set'}\n` +
+        `🔗 Booking Code: *${existingTenant.booking_code}*\n\n` +
+        `Type *HELP* to see your salon menu and manage your business.`
       );
     }
     // Create the tenant
@@ -408,7 +408,7 @@ async function handleFirstServicePrice(phone, body, session) {
     const trialPeriodDays = await systemSettingsModel.getTrialPeriodDays();
     const trialExpiryDate = new Date();
     trialExpiryDate.setDate(trialExpiryDate.getDate() + trialPeriodDays);
-    
+
     await subscriptionModel.create({
       tenantId: tenant.id,
       startDate: new Date(),
@@ -428,21 +428,21 @@ async function handleFirstServicePrice(phone, body, session) {
     return sendMessage(
       phone,
       `✅ *Registration Complete!*\n\n` +
-        `👔 You are now the verified owner of *${tenant.name}*!\n\n` +
-        `🎁 *FREE TRIAL PERIOD* 🎁\n` +
-        `You have *${trialPeriodDays} days* to try all features for FREE!\n` +
-        `Your trial expires on: *${trialExpiryDate.toLocaleDateString()}*\n\n` +
-        `📍 Location: ${tenant.location}\n` +
-        `🔗 Booking Code: *${bookingCode}*\n` +
-        `📎 Booking Link:\n${bookingLink}\n\n` +
-        `First service added: *${ctx.temp_service_name}* (${ctx.temp_service_duration} min, ${formatCurrency(price)})\n\n` +
-        `*As the salon owner, use the menu to access:*\n` +
-        `• Appointments viewing\n` +
-        `• Add/remove services\n` +
-        `• Manage working hours\n` +
-        `• And more features\n\n` +
-        `📖 Type *HELP* or *9* anytime to see the full menu.\n\n` +
-        `Would you like to add another service? Type the service name or type *DONE* to finish setup.`
+      `👔 You are now the verified owner of *${tenant.name}*!\n\n` +
+      `🎁 *FREE TRIAL PERIOD* 🎁\n` +
+      `You have *${trialPeriodDays} days* to try all features for FREE!\n` +
+      `Your trial expires on: *${trialExpiryDate.toLocaleDateString()}*\n\n` +
+      `📍 Location: ${tenant.location}\n` +
+      `🔗 Booking Code: *${bookingCode}*\n` +
+      `📎 Booking Link:\n${bookingLink}\n\n` +
+      `First service added: *${ctx.temp_service_name}* (${ctx.temp_service_duration} min, ${formatCurrency(price)})\n\n` +
+      `*As the salon owner, use the menu to access:*\n` +
+      `• Appointments viewing\n` +
+      `• Add/remove services\n` +
+      `• Manage working hours\n` +
+      `• And more features\n\n` +
+      `📖 Type *HELP* or *9* anytime to see the full menu.\n\n` +
+      `Would you like to add another service? Type the service name or type *DONE* to finish setup.`
     );
   } catch (err) {
     logger.error(`Registration error: ${err.message}`);
@@ -454,8 +454,8 @@ async function handleFirstServicePrice(phone, body, session) {
       return sendMessage(
         phone,
         `⚠️ *Registration Issue Detected*\n\n` +
-          `It looks like you may already have a salon registered with this number.\n\n` +
-          `Type *HELP* to access your salon menu, or contact support if you need assistance.`
+        `It looks like you may already have a salon registered with this number.\n\n` +
+        `Type *HELP* to access your salon menu, or contact support if you need assistance.`
       );
     }
 
@@ -475,7 +475,7 @@ async function handleMoreServices(phone, body, session) {
     });
     return sendMessage(
       phone,
-      `🎉 Setup complete! Your salon is ready to accept bookings.\n\nType *help* to see all available commands.`
+      `🎉 Setup complete! Your salon is ready to accept bookings.\n\n Share your booking link with your clients! by clicking on the share icon.\n\nType *help* to see all available commands.`
     );
   }
 
@@ -624,7 +624,7 @@ async function handleAddServiceName(phone, body, session, tenant) {
     await sessionService.clearSession(phone);
     return showHelp(phone, tenant);
   }
-  
+
   const name = body.trim();
   if (name.length < 2) {
     return sendMessage(phone, 'Please provide a valid service name.\n\n_Type *BACK* to cancel_');
@@ -645,7 +645,7 @@ async function handleAddServiceDuration(phone, body, session, tenant) {
     });
     return sendMessage(phone, `➕ *Add Service*\n\nWhat is the *name* of the new service?\n\n_Type *BACK* to cancel_`);
   }
-  
+
   const duration = parseInt(body.trim(), 10);
   if (isNaN(duration) || duration < 5 || duration > 480) {
     return sendMessage(phone, 'Please provide a valid duration in minutes (5-480).\n\n_Type *BACK* to go back_');
@@ -666,7 +666,7 @@ async function handleAddServicePrice(phone, body, session, tenant) {
     });
     return sendMessage(phone, `➕ *Add Service*\n\nService: *${session.context.temp_service_name}*\n\nHow long does it take? (in minutes)\n\n_Type *BACK* to go back_`);
   }
-  
+
   const price = parseFloat(body.trim().replace('$', ''));
   if (isNaN(price) || price < 0) {
     return sendMessage(phone, 'Please provide a valid price.\n\n_Type *BACK* to go back_');
@@ -841,44 +841,44 @@ async function showHelp(phone, tenant) {
     `📖 *OnTime Commands*
 
 ` +
-      `*Quick commands (type the NUMBER):*
+    `*Quick commands (type the NUMBER):*
 ` +
-      `1️⃣ *TODAY* - Today's appointments
+    `1️⃣ *TODAY* - Today's appointments
 ` +
-      `2️⃣ *APPOINTMENTS* - Upcoming appointments (7 days)
+    `2️⃣ *APPOINTMENTS* - Upcoming appointments (7 days)
 ` +
-      `3️⃣ *SERVICES* - List your services
+    `3️⃣ *SERVICES* - List your services
 ` +
-      `4️⃣ *ADD SERVICE* - Add a new service
+    `4️⃣ *ADD SERVICE* - Add a new service
 ` +
-      `5️⃣ *REMOVE SERVICE <id>* - Remove a service
+    `5️⃣ *REMOVE SERVICE <id>* - Remove a service
 ` +
-      `6️⃣ *HOURS* - View/set working hours
+    `6️⃣ *HOURS* - View/set working hours
 ` +
-      `7️⃣ *LINK* - Get your booking link
+    `7️⃣ *LINK* - Get your booking link
 ` +
-      `8️⃣ *CANCEL <id>* - Cancel an appointment
+    `8️⃣ *CANCEL <id>* - Cancel an appointment
 ` +
-      `9️⃣ *HELP* - Show this menu
+    `9️⃣ *HELP* - Show this menu
 ` +
-      `🔟 *PDF* - Export appointments to PDF
+    `🔟 *PDF* - Export appointments to PDF
 ` +
-      `1️⃣1️⃣ *EDIT SERVICE* - Edit a service
+    `1️⃣1️⃣ *EDIT SERVICE* - Edit a service
 
 ` +
-      `*Examples:*
+    `*Examples:*
 ` +
-      `Type *6 monday 08:00-18:00* to set hours
+    `Type *6 monday 08:00-18:00* to set hours
 ` +
-      `Type *8* to cancel appointment #42
+    `Type *8* to cancel appointment #42
 
 ` +
-      `_Type *BACK* at any time to return to this menu_
+    `_Type *BACK* at any time to return to this menu_
 ` +
-      `_Type *CANCEL* to exit current operation_
+    `_Type *CANCEL* to exit current operation_
 
 ` +
-      `📎 Your booking link:\n${link}`
+    `📎 Your booking link:\n${link}`
   );
 }
 
@@ -933,27 +933,27 @@ async function handlePaymentConfirmation(phone, tenant, body) {
   const parts = body.trim().split(/\s+/);
   const amount = parts[1];
   const method = parts.slice(2).join(' ') || 'Not specified';
-  
+
   // Notify super admin
   const adminPhone = process.env.SUPER_ADMIN_PHONE || process.env.BOT_PHONE_NUMBER;
   if (adminPhone) {
     sendMessage(
       adminPhone,
       `💰 *Payment Report*\n\n` +
-        `Salon: *${tenant.name}*\n` +
-        `Phone: ${phone}\n` +
-        `Amount: $${amount}\n` +
-        `Method: ${method}\n\n` +
-        `To activate, go to: /admin/salon/${tenant.id}`
+      `Salon: *${tenant.name}*\n` +
+      `Phone: ${phone}\n` +
+      `Amount: $${amount}\n` +
+      `Method: ${method}\n\n` +
+      `To activate, go to: /admin/salon/${tenant.id}`
     ).catch((err) => logger.error(`Failed to notify admin of payment: ${err.message}`));
   }
-  
+
   return sendMessage(
     phone,
     `✅ *Payment Reported!*\n\n` +
-      `Amount: $${amount}\n` +
-      `Method: ${method}\n\n` +
-      `Thank you! We're verifying your payment and will activate your account shortly. You'll receive a confirmation message once active.`
+    `Amount: $${amount}\n` +
+    `Method: ${method}\n\n` +
+    `Thank you! We're verifying your payment and will activate your account shortly. You'll receive a confirmation message once active.`
   );
 }
 
@@ -962,7 +962,7 @@ async function handlePaymentConfirmation(phone, tenant, body) {
 async function generateAppointmentsPDF(phone, tenant) {
   try {
     const appointments = await appointmentModel.findAllByTenant(tenant.id);
-    
+
     if (appointments.length === 0) {
       return sendMessage(phone, '📭 No appointments to export.\n\nType *2* to see upcoming appointments.\n_Type *BACK* for main menu_');
     }
@@ -971,57 +971,57 @@ async function generateAppointmentsPDF(phone, tenant) {
     const doc = new PDFDocument();
     const fileName = `appointments_${tenant.booking_code}_${new Date().toISOString().split('T')[0]}.pdf`;
     const filePath = path.join(__dirname, '..', 'temp', fileName);
-    
+
     // Ensure temp directory exists
     if (!fs.existsSync(path.dirname(filePath))) {
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
     }
-    
+
     const stream = fs.createWriteStream(filePath);
     doc.pipe(stream);
-    
+
     // Header
     doc.fontSize(20).text(tenant.name, 50, 50);
     doc.fontSize(12).text(`Appointment Report - ${new Date().toLocaleDateString()}`, 50, 75);
     doc.moveDown();
-    
+
     // Table header
     doc.fontSize(10).text('Date', 50, 110);
     doc.text('Time', 150, 110);
     doc.text('Client Name', 220, 110);
     doc.text('Service', 380, 110);
-    
+
     doc.moveTo(50, 125).lineTo(550, 125).stroke();
-    
+
     let y = 135;
-    
+
     for (const appt of appointments) {
       const hTime = toHarareTime(appt.start_time);
       const dateStr = hTime.toISOString().split('T')[0];
       const timeStr = formatTime(hTime);
-      
+
       // Check if we need a new page
       if (y > 700) {
         doc.addPage();
         y = 50;
       }
-      
+
       doc.fontSize(9).text(dateStr, 50, y);
       doc.text(timeStr, 150, y);
       doc.text(appt.client_name, 220, y);
       doc.text(appt.service_name || 'N/A', 380, y);
-      
+
       y += 20;
     }
-    
+
     doc.end();
-    
+
     // Wait for file to be written
     await new Promise((resolve, reject) => {
       stream.on('finish', resolve);
       stream.on('error', reject);
     });
-    
+
     // Send file via WhatsApp (if supported) or provide download link
     // For now, send confirmation message
     return sendMessage(
@@ -1043,16 +1043,16 @@ async function generateAppointmentsPDF(phone, tenant) {
 
 async function startEditService(phone, tenant, serviceIdOrName = null) {
   const services = await serviceModel.findByTenant(tenant.id);
-  
+
   if (services.length === 0) {
     return sendMessage(phone, '❌ You have no services to edit. Add one first with *ADD SERVICE* (4)');
   }
-  
+
   // If service ID or name provided, try to find it
   if (serviceIdOrName) {
     let service = null;
     const arg = serviceIdOrName.trim();
-    
+
     // First, try to parse as a list number (1, 2, 3...)
     const listNum = parseInt(arg, 10);
     if (!isNaN(listNum) && listNum >= 1 && listNum <= services.length) {
@@ -1070,7 +1070,7 @@ async function startEditService(phone, tenant, serviceIdOrName = null) {
         }
       }
     }
-    
+
     if (!service) {
       const serviceList = services.map((s, i) => `${i + 1}. ${s.name} (${s.duration_minutes} min, $${s.price})`).join('\n');
       return sendMessage(
@@ -1080,7 +1080,7 @@ async function startEditService(phone, tenant, serviceIdOrName = null) {
         `Type e.g *EDIT SERVICE 1* to edit, or *BACK* to return to menu.`
       );
     }
-    
+
     // Start edit flow
     await sessionService.setSession(phone, {
       role: 'admin',
@@ -1093,7 +1093,7 @@ async function startEditService(phone, tenant, serviceIdOrName = null) {
         edit_service_price: service.price,
       },
     });
-    
+
     return sendMessage(
       phone,
       `✏️ *Editing Service: ${service.name}*\n\n` +
@@ -1109,10 +1109,10 @@ async function startEditService(phone, tenant, serviceIdOrName = null) {
       `Type the number, *BACK* to return to menu, or *CANCEL* to abort.`
     );
   }
-  
+
   // Show list of services to select from (numbered 1, 2, 3...)
   const serviceList = services.map((s, i) => `${i + 1}. ${s.name} (${s.duration_minutes} min, $${s.price})`).join('\n');
-  
+
   return sendMessage(
     phone,
     `✏️ *Edit Service*\n\n` +
@@ -1125,12 +1125,12 @@ async function handleEditServiceState(phone, body, session, tenant) {
   const state = session.state;
   const ctx = session.context;
   const lowerBody = body.trim().toLowerCase();
-  
+
   if (lowerBody === 'cancel' || lowerBody === 'back') {
     await sessionService.clearSession(phone);
     return sendMessage(phone, '✏️ Service editing cancelled. Type *HELP* for menu.');
   }
-  
+
   switch (state) {
     case 'edit_service_select_field':
       return handleEditServiceSelectField(phone, body, session, tenant);
@@ -1157,12 +1157,12 @@ async function handleEditServiceSelectField(phone, body, session, tenant) {
   const lowerInput = input.toLowerCase();
   const num = parseInt(input, 10);
   const ctx = session.context;
-  
+
   if (lowerInput === 'back') {
     await sessionService.clearSession(phone);
     return showHelp(phone, tenant);
   }
-  
+
   if (num === 1 || lowerInput === 'name') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_name',
@@ -1170,7 +1170,7 @@ async function handleEditServiceSelectField(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ Current name: *${ctx.edit_service_name}*\n\nEnter the new service name:\n\n_Type *BACK* to return to menu_`);
   }
-  
+
   if (num === 2 || lowerInput === 'duration') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_duration',
@@ -1178,7 +1178,7 @@ async function handleEditServiceSelectField(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ Current duration: *${ctx.edit_service_duration} minutes*\n\nEnter the new duration in minutes:\n\n_Type *BACK* to return to menu_`);
   }
-  
+
   if (num === 3 || lowerInput === 'price') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_price',
@@ -1186,7 +1186,7 @@ async function handleEditServiceSelectField(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ Current price: *$${ctx.edit_service_price}*\n\nEnter the new price (e.g., 25 or 25.50):\n\n_Type *BACK* to return to menu_`);
   }
-  
+
   if (num === 4 || lowerInput === 'multiple' || lowerInput === 'multi') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_multi_name',
@@ -1194,7 +1194,7 @@ async function handleEditServiceSelectField(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ Let's edit all fields.\n\nCurrent name: *${ctx.edit_service_name}*\nEnter the new service name (or type *SAME* to keep it):\n\n_Type *BACK* to return to menu_`);
   }
-  
+
   return sendMessage(phone, '❌ Invalid option. Type 1-4, *BACK* to return to menu, or *CANCEL* to abort.');
 }
 
@@ -1202,7 +1202,7 @@ async function handleEditServiceName(phone, body, session, tenant) {
   const lowerBody = body.trim().toLowerCase();
   const newName = body.trim();
   const ctx = session.context;
-  
+
   if (lowerBody === 'back') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_select_field',
@@ -1210,11 +1210,11 @@ async function handleEditServiceName(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ *Editing Service: ${ctx.edit_service_name}*\n\nWhat would you like to edit?\n\n1️⃣ *Name*\n2️⃣ *Duration*\n3️⃣ *Price*\n4️⃣ *Multiple fields*\n\nType the number, *BACK* to return to menu, or *CANCEL* to abort.`);
   }
-  
+
   if (newName.length < 2) {
     return sendMessage(phone, '❌ Service name must be at least 2 characters. Try again:\n\n_Type *BACK* to return to menu_');
   }
-  
+
   try {
     await serviceModel.update(ctx.edit_service_id, tenant.id, { name: newName });
     await sessionService.clearSession(phone);
@@ -1229,7 +1229,7 @@ async function handleEditServiceDuration(phone, body, session, tenant) {
   const lowerBody = body.trim().toLowerCase();
   const minutes = parseInt(body.trim(), 10);
   const ctx = session.context;
-  
+
   if (lowerBody === 'back') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_select_field',
@@ -1237,11 +1237,11 @@ async function handleEditServiceDuration(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ *Editing Service: ${ctx.edit_service_name}*\n\nWhat would you like to edit?\n\n1️⃣ *Name*\n2️⃣ *Duration*\n3️⃣ *Price*\n4️⃣ *Multiple fields*\n\nType the number, *BACK* to return to menu, or *CANCEL* to abort.`);
   }
-  
+
   if (isNaN(minutes) || minutes < 5 || minutes > 480) {
     return sendMessage(phone, '❌ Please enter a valid duration between 5 and 480 minutes. Try again:\n\n_Type *BACK* to return to menu_');
   }
-  
+
   try {
     await serviceModel.update(ctx.edit_service_id, tenant.id, { durationMinutes: minutes });
     await sessionService.clearSession(phone);
@@ -1256,7 +1256,7 @@ async function handleEditServicePrice(phone, body, session, tenant) {
   const lowerBody = body.trim().toLowerCase();
   const price = parseFloat(body.trim());
   const ctx = session.context;
-  
+
   if (lowerBody === 'back') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_select_field',
@@ -1264,11 +1264,11 @@ async function handleEditServicePrice(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ *Editing Service: ${ctx.edit_service_name}*\n\nWhat would you like to edit?\n\n1️⃣ *Name*\n2️⃣ *Duration*\n3️⃣ *Price*\n4️⃣ *Multiple fields*\n\nType the number, *BACK* to return to menu, or *CANCEL* to abort.`);
   }
-  
+
   if (isNaN(price) || price < 0) {
     return sendMessage(phone, '❌ Please enter a valid price (e.g., 25 or 25.50). Try again:\n\n_Type *BACK* to return to menu_');
   }
-  
+
   try {
     await serviceModel.update(ctx.edit_service_id, tenant.id, { price });
     await sessionService.clearSession(phone);
@@ -1283,7 +1283,7 @@ async function handleEditServiceMultiName(phone, body, session, tenant) {
   const input = body.trim();
   const lowerInput = input.toLowerCase();
   const ctx = session.context;
-  
+
   if (lowerInput === 'back') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_select_field',
@@ -1291,14 +1291,14 @@ async function handleEditServiceMultiName(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ *Editing Service: ${ctx.edit_service_name}*\n\nWhat would you like to edit?\n\n1️⃣ *Name*\n2️⃣ *Duration*\n3️⃣ *Price*\n4️⃣ *Multiple fields*\n\nType the number, *BACK* to return to menu, or *CANCEL* to abort.`);
   }
-  
+
   const newName = lowerInput === 'same' ? ctx.edit_service_name : input;
-  
+
   await sessionService.updateSession(phone, {
     state: 'edit_service_multi_duration',
     context: { ...ctx, new_service_name: newName, prev_state: 'edit_service_multi_name' },
   });
-  
+
   return sendMessage(phone, `✏️ *Editing Service: ${ctx.edit_service_name}*\n\nCurrent duration: *${ctx.edit_service_duration} minutes*\n\nEnter the new duration in minutes (or type *SAME*):\n\n_Type *BACK* to return to menu_`);
 }
 
@@ -1306,7 +1306,7 @@ async function handleEditServiceMultiDuration(phone, body, session, tenant) {
   const input = body.trim();
   const lowerInput = input.toLowerCase();
   const ctx = session.context;
-  
+
   if (lowerInput === 'back') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_multi_name',
@@ -1314,7 +1314,7 @@ async function handleEditServiceMultiDuration(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ *Editing Service: ${ctx.edit_service_name}*\n\nCurrent name: *${ctx.edit_service_name}*\n\nEnter the new service name (or type *SAME* to keep it):\n\n_Type *BACK* to return to menu_`);
   }
-  
+
   let newDuration;
   if (lowerInput === 'same') {
     newDuration = ctx.edit_service_duration;
@@ -1324,12 +1324,12 @@ async function handleEditServiceMultiDuration(phone, body, session, tenant) {
       return sendMessage(phone, '❌ Please enter a valid duration (5-480 min) or *SAME*. Try again:\n\n_Type *BACK* to return to menu_');
     }
   }
-  
+
   await sessionService.updateSession(phone, {
     state: 'edit_service_multi_price',
     context: { ...ctx, new_service_duration: newDuration, prev_state: 'edit_service_multi_duration' },
   });
-  
+
   return sendMessage(phone, `✏️ *Editing Service: ${ctx.edit_service_name}*\n\nCurrent price: *$${ctx.edit_service_price}*\n\nEnter the new price (or type *SAME*):\n\n_Type *BACK* to return to menu_`);
 }
 
@@ -1337,7 +1337,7 @@ async function handleEditServiceMultiPrice(phone, body, session, tenant) {
   const input = body.trim();
   const lowerInput = input.toLowerCase();
   const ctx = session.context;
-  
+
   if (lowerInput === 'back') {
     await sessionService.updateSession(phone, {
       state: 'edit_service_multi_duration',
@@ -1345,7 +1345,7 @@ async function handleEditServiceMultiPrice(phone, body, session, tenant) {
     });
     return sendMessage(phone, `✏️ *Editing Service: ${ctx.edit_service_name}*\n\nCurrent duration: *${ctx.edit_service_duration} minutes*\n\nEnter the new duration in minutes (or type *SAME*):\n\n_Type *BACK* to return to menu_`);
   }
-  
+
   let newPrice;
   if (lowerInput === 'same') {
     newPrice = ctx.edit_service_price;
@@ -1355,7 +1355,7 @@ async function handleEditServiceMultiPrice(phone, body, session, tenant) {
       return sendMessage(phone, '❌ Please enter a valid price or *SAME*. Try again:\n\n_Type *BACK* to return to menu_');
     }
   }
-  
+
   try {
     await serviceModel.update(ctx.edit_service_id, tenant.id, {
       name: ctx.new_service_name,
