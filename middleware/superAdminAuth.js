@@ -1,5 +1,5 @@
-const SUPER_ADMIN_USERNAME = 'hyfos';
-const SUPER_ADMIN_PASSWORD = 'hyfos2305';
+const superAdminModel = require('../models/superAdmin');
+const logger = require('../utils/logger');
 
 // Middleware to check if user is authenticated as super admin
 function requireSuperAdmin(req, res, next) {
@@ -10,9 +10,19 @@ function requireSuperAdmin(req, res, next) {
   return res.redirect('/admin/login');
 }
 
-// Middleware to check credentials
-function authenticateSuperAdmin(username, password) {
-  return username === SUPER_ADMIN_USERNAME && password === SUPER_ADMIN_PASSWORD;
+// Function to check credentials against database
+async function authenticateSuperAdmin(username, password) {
+  try {
+    const admin = await superAdminModel.findByUsername(username);
+    if (!admin) {
+      return false;
+    }
+    
+    return await superAdminModel.verifyPassword(admin, password);
+  } catch (err) {
+    logger.error(`Authentication error: ${err.message}`);
+    return false;
+  }
 }
 
 module.exports = {

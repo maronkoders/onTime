@@ -6,6 +6,7 @@ const appointmentModel = require('../models/appointment');
 const serviceModel = require('../models/service');
 const subscriptionFeeModel = require('../models/subscriptionFee');
 const systemSettingsModel = require('../models/systemSettings');
+const superAdminModel = require('../models/superAdmin');
 const logger = require('../utils/logger');
 
 // Login page (GET)
@@ -20,7 +21,8 @@ router.get('/login', (req, res) => {
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
   
-  if (authenticateSuperAdmin(username, password)) {
+  const isAuthenticated = await authenticateSuperAdmin(username, password);
+  if (isAuthenticated) {
     req.session.isSuperAdmin = true;
     req.session.username = username;
     return res.redirect('/admin/overview');
@@ -94,12 +96,13 @@ router.get('/settings', requireSuperAdmin, async (req, res) => {
 });
 
 // Update super admin password
-router.post('/settings/update-password', requireSuperAdmin, (req, res) => {
+router.post('/settings/update-password', requireSuperAdmin, async (req, res) => {
   try {
     const { currentPassword, newPassword, confirmPassword } = req.body;
     
     // Verify current password
-    if (!authenticateSuperAdmin(req.session.username, currentPassword)) {
+    const isCurrentValid = await authenticateSuperAdmin(req.session.username, currentPassword);
+    if (!isCurrentValid) {
       return res.send(getSettingsPage([], req.session.username, 'Current password is incorrect'));
     }
     
@@ -113,8 +116,9 @@ router.post('/settings/update-password', requireSuperAdmin, (req, res) => {
       return res.send(getSettingsPage([], req.session.username, 'Password must be at least 6 characters'));
     }
     
-    // Note: In production, store hashed passwords in database
-    // For now, we'll just show success message
+    // Update hashed password in database
+    await superAdminModel.updatePassword(req.session.username, newPassword);
+    
     res.send(getSettingsPage([], req.session.username, null, 'Password updated successfully'));
   } catch (err) {
     logger.error(`Update password error: ${err.message}`);
@@ -440,6 +444,7 @@ function getLoginPage(error = '') {
     }
     .form-group {
       margin-bottom: 20px;
+      position: relative;
     }
     label {
       display: block;
@@ -448,17 +453,47 @@ function getLoginPage(error = '') {
       font-weight: 500;
       font-size: 14px;
     }
+    .input-wrapper {
+      position: relative;
+    }
     input {
       width: 100%;
       padding: 12px 16px;
       border: 2px solid #e0e0e0;
       border-radius: 8px;
       font-size: 16px;
-      transition: border-color 0.3s;
+      transition: all 0.3s;
     }
     input:focus {
       outline: none;
       border-color: #667eea;
+      box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+    }
+    input.invalid {
+      border-color: #ef4444;
+    }
+    input.valid {
+      border-color: #10b981;
+    }
+    .toggle-password {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: #94a3b8;
+      font-size: 18px;
+      padding: 4px;
+      transition: color 0.2s;
+    }
+    .toggle-password:hover {
+      color: #667eea;
+    }
+    .validation-msg {
+      font-size: 12px;
+      margin-top: 4px;
+      color: #ef4444;
+      display: none;
     }
     button {
       width: 100%;
@@ -470,11 +505,18 @@ function getLoginPage(error = '') {
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
-      transition: transform 0.2s, box-shadow 0.2s;
+      transition: all 0.3s;
+      margin-top: 10px;
     }
     button:hover {
       transform: translateY(-2px);
       box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
     }
     .error {
       background: #fee;
@@ -501,18 +543,75 @@ function getLoginPage(error = '') {
     <h1>OnTime Super Admin</h1>
     <p class="subtitle">Salon Management Dashboard</p>
     ${error ? `<div class="error">${error}</div>` : ''}
-    <form method="POST" action="/admin/login">
+    <form method="POST" action="/admin/login" id="loginForm">
       <div class="form-group">
         <label for="username">Username</label>
-        <input type="text" id="username" name="username" required autofocus>
+        <div class="input-wrapper">
+          <input type="text" id="username" name="username" required autofocus>
+        </div>
+        <div id="username-msg" class="validation-msg">Please enter your username</div>
       </div>
       <div class="form-group">
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" required>
+        <div class="input-wrapper">
+          <input type="password" id="password" name="password" required>
+          <span class="toggle-password" id="togglePassword">👁️</span>
+        </div>
+        <div id="password-msg" class="validation-msg">Please enter your password</div>
       </div>
-      <button type="submit">Sign In</button>
+      <button type="submit" id="submitBtn">Sign In</button>
     </form>
   </div>
+
+  <script>
+    const loginForm = document.getElementById('loginForm');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const togglePassword = document.getElementById('togglePassword');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // Toggle Password Visibility
+    togglePassword.addEventListener('click', () => {
+      const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+      passwordInput.setAttribute('type', type);
+      togglePassword.textContent = type === 'password' ? '👁️' : '🙈';
+    });
+
+    // Real-time Validation
+    function validateField(input, msgId) {
+      const msg = document.getElementById(msgId);
+      if (input.value.trim() === '') {
+        input.classList.add('invalid');
+        input.classList.remove('valid');
+        msg.style.display = 'block';
+        return false;
+      } else {
+        input.classList.remove('invalid');
+        input.classList.add('valid');
+        msg.style.display = 'none';
+        return true;
+      }
+    }
+
+    function checkForm() {
+      const isUsernameValid = usernameInput.value.trim() !== '';
+      const isPasswordValid = passwordInput.value.trim() !== '';
+      submitBtn.disabled = !(isUsernameValid && isPasswordValid);
+    }
+
+    usernameInput.addEventListener('input', () => {
+      validateField(usernameInput, 'username-msg');
+      checkForm();
+    });
+
+    passwordInput.addEventListener('input', () => {
+      validateField(passwordInput, 'password-msg');
+      checkForm();
+    });
+
+    // Initial check
+    checkForm();
+  </script>
 </body>
 </html>`;
 }
@@ -2060,17 +2159,50 @@ function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = nu
       font-weight: 500;
       font-size: 14px;
     }
+    .input-wrapper {
+      position: relative;
+    }
     .form-group input, .form-group select, .form-group textarea {
       width: 100%;
       padding: 10px 14px;
       border: 2px solid #e5e7eb;
       border-radius: 8px;
       font-size: 14px;
-      transition: border-color 0.2s;
+      transition: all 0.2s;
     }
     .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
       outline: none;
       border-color: #667eea;
+      box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+    }
+    .form-group input.invalid {
+      border-color: #ef4444;
+    }
+    .form-group input.valid {
+      border-color: #10b981;
+    }
+    .toggle-password {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: #94a3b8;
+      font-size: 16px;
+      padding: 4px;
+      transition: color 0.2s;
+    }
+    .toggle-password:hover {
+      color: #667eea;
+    }
+    .validation-msg {
+      font-size: 12px;
+      margin-top: 4px;
+      color: #ef4444;
+      display: none;
+    }
+    .validation-msg.success {
+      color: #10b981;
     }
     .form-row {
       display: grid;
@@ -2085,6 +2217,11 @@ function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = nu
       cursor: pointer;
       border: none;
       transition: all 0.2s;
+    }
+    .btn:disabled {
+      background: #ccc !important;
+      cursor: not-allowed;
+      transform: none !important;
     }
     .btn-primary {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -2236,20 +2373,32 @@ function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = nu
           <h3>🔐 Change Password</h3>
         </div>
         <div class="card-body">
-          <form method="POST" action="/admin/settings/update-password">
+          <form method="POST" action="/admin/settings/update-password" id="passwordForm">
             <div class="form-group">
               <label for="currentPassword">Current Password</label>
-              <input type="password" id="currentPassword" name="currentPassword" required>
+              <div class="input-wrapper">
+                <input type="password" id="currentPassword" name="currentPassword" required>
+                <span class="toggle-password" onclick="togglePass('currentPassword', this)">👁️</span>
+              </div>
+              <div id="currentPassword-msg" class="validation-msg">Current password is required</div>
             </div>
             <div class="form-group">
               <label for="newPassword">New Password</label>
-              <input type="password" id="newPassword" name="newPassword" required minlength="6">
+              <div class="input-wrapper">
+                <input type="password" id="newPassword" name="newPassword" required minlength="6">
+                <span class="toggle-password" onclick="togglePass('newPassword', this)">👁️</span>
+              </div>
+              <div id="newPassword-msg" class="validation-msg">Password must be at least 6 characters</div>
             </div>
             <div class="form-group">
               <label for="confirmPassword">Confirm New Password</label>
-              <input type="password" id="confirmPassword" name="confirmPassword" required minlength="6">
+              <div class="input-wrapper">
+                <input type="password" id="confirmPassword" name="confirmPassword" required minlength="6">
+                <span class="toggle-password" onclick="togglePass('confirmPassword', this)">👁️</span>
+              </div>
+              <div id="confirmPassword-msg" class="validation-msg">Passwords do not match</div>
             </div>
-            <button type="submit" class="btn btn-primary">Update Password</button>
+            <button type="submit" id="passwordBtn" class="btn btn-primary">Update Password</button>
           </form>
         </div>
       </div>
@@ -2259,15 +2408,16 @@ function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = nu
           <h3>🎁 Trial Period</h3>
         </div>
         <div class="card-body">
-          <form method="POST" action="/admin/settings/trial-period">
+          <form method="POST" action="/admin/settings/trial-period" id="trialForm">
             <div class="form-group">
               <label for="trialDays">Trial Duration (Days)</label>
               <input type="number" id="trialDays" name="days" value="${trialPeriodDays}" required min="1" max="365">
+              <div id="trialDays-msg" class="validation-msg">Please enter a value between 1 and 365</div>
               <p style="color: #64748b; font-size: 13px; margin-top: 6px;">
                 Number of days new salons get for free trial. Default: 14 days.
               </p>
             </div>
-            <button type="submit" class="btn btn-primary">Update Trial Period</button>
+            <button type="submit" id="trialBtn" class="btn btn-primary">Update Trial Period</button>
           </form>
         </div>
       </div>
@@ -2293,28 +2443,31 @@ function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = nu
           </table>
           
           <h4 style="font-size: 16px; color: #333; margin-bottom: 16px;">Add New Plan</h4>
-          <form method="POST" action="/admin/settings/subscription-fees">
+          <form method="POST" action="/admin/settings/subscription-fees" id="planForm">
             <div class="form-row">
               <div class="form-group">
                 <label for="name">Plan Name</label>
                 <input type="text" id="name" name="name" placeholder="e.g., Monthly" required>
+                <div id="name-msg" class="validation-msg">Plan name is required</div>
               </div>
               <div class="form-group">
                 <label for="durationDays">Duration (Days)</label>
                 <input type="number" id="durationDays" name="durationDays" placeholder="30" required min="1">
+                <div id="durationDays-msg" class="validation-msg">Must be at least 1 day</div>
               </div>
             </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="price">Price ($)</label>
                 <input type="number" id="price" name="price" placeholder="50.00" required min="0" step="0.01">
+                <div id="price-msg" class="validation-msg">Price must be 0 or more</div>
               </div>
               <div class="form-group">
                 <label for="description">Description</label>
                 <input type="text" id="description" name="description" placeholder="Optional description">
               </div>
             </div>
-            <button type="submit" class="btn btn-success">Add Subscription Plan</button>
+            <button type="submit" id="planBtn" class="btn btn-success">Add Subscription Plan</button>
           </form>
         </div>
       </div>
@@ -2331,21 +2484,24 @@ function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = nu
         <div class="form-group">
           <label for="editName">Plan Name</label>
           <input type="text" id="editName" name="name" required>
+          <div id="editName-msg" class="validation-msg">Plan name is required</div>
         </div>
         <div class="form-group">
           <label for="editDuration">Duration (Days)</label>
           <input type="number" id="editDuration" name="durationDays" required min="1">
+          <div id="editDuration-msg" class="validation-msg">Must be at least 1 day</div>
         </div>
         <div class="form-group">
           <label for="editPrice">Price ($)</label>
           <input type="number" id="editPrice" name="price" required min="0" step="0.01">
+          <div id="editPrice-msg" class="validation-msg">Price must be 0 or more</div>
         </div>
         <div class="form-group">
           <label for="editDescription">Description</label>
           <input type="text" id="editDescription" name="description">
         </div>
         <div style="display: flex; gap: 12px;">
-          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <button type="submit" id="editBtn" class="btn btn-primary">Save Changes</button>
           <button type="button" onclick="closeEditModal()" class="btn" style="background: #e5e7eb; color: #374151;">Cancel</button>
         </div>
       </form>
@@ -2353,6 +2509,13 @@ function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = nu
   </div>
   
   <script>
+    function togglePass(id, el) {
+      const input = document.getElementById(id);
+      const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+      input.setAttribute('type', type);
+      el.textContent = type === 'password' ? '👁️' : '🙈';
+    }
+
     function openEditModal(id, name, duration, price, description) {
       document.getElementById('editForm').action = '/admin/settings/subscription-fees/' + id + '/update';
       document.getElementById('editName').value = name;
@@ -2360,6 +2523,7 @@ function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = nu
       document.getElementById('editPrice').value = price;
       document.getElementById('editDescription').value = description;
       document.getElementById('editModal').classList.add('active');
+      validateEditForm();
     }
     
     function closeEditModal() {
@@ -2370,6 +2534,89 @@ function getSettingsPage(subscriptionFees, trialPeriodDays, username, error = nu
     document.getElementById('editModal').addEventListener('click', function(e) {
       if (e.target === this) closeEditModal();
     });
+
+    // Real-time Validation Logic
+    function validate(input, msgId, condition) {
+      const msg = document.getElementById(msgId);
+      if (!condition) {
+        input.classList.add('invalid');
+        input.classList.remove('valid');
+        if (msg) msg.style.display = 'block';
+        return false;
+      } else {
+        input.classList.remove('invalid');
+        input.classList.add('valid');
+        if (msg) msg.style.display = 'none';
+        return true;
+      }
+    }
+
+    // Password Form Validation
+    const passwordForm = document.getElementById('passwordForm');
+    const currentPass = document.getElementById('currentPassword');
+    const newPass = document.getElementById('newPassword');
+    const confirmPass = document.getElementById('confirmPassword');
+    const passwordBtn = document.getElementById('passwordBtn');
+
+    function validatePasswordForm() {
+      const v1 = validate(currentPass, 'currentPassword-msg', currentPass.value.length > 0);
+      const v2 = validate(newPass, 'newPassword-msg', newPass.value.length >= 6);
+      const v3 = validate(confirmPass, 'confirmPassword-msg', confirmPass.value === newPass.value && confirmPass.value.length > 0);
+      passwordBtn.disabled = !(v1 && v2 && v3);
+    }
+
+    [currentPass, newPass, confirmPass].forEach(el => el.addEventListener('input', validatePasswordForm));
+
+    // Trial Form Validation
+    const trialForm = document.getElementById('trialForm');
+    const trialDays = document.getElementById('trialDays');
+    const trialBtn = document.getElementById('trialBtn');
+
+    function validateTrialForm() {
+      const val = parseInt(trialDays.value);
+      const isValid = !isNaN(val) && val >= 1 && val <= 365;
+      validate(trialDays, 'trialDays-msg', isValid);
+      trialBtn.disabled = !isValid;
+    }
+
+    trialDays.addEventListener('input', validateTrialForm);
+
+    // Plan Form Validation
+    const planForm = document.getElementById('planForm');
+    const planName = document.getElementById('name');
+    const planDuration = document.getElementById('durationDays');
+    const planPrice = document.getElementById('price');
+    const planBtn = document.getElementById('planBtn');
+
+    function validatePlanForm() {
+      const v1 = validate(planName, 'name-msg', planName.value.trim().length > 0);
+      const v2 = validate(planDuration, 'durationDays-msg', parseInt(planDuration.value) >= 1);
+      const v3 = validate(planPrice, 'price-msg', parseFloat(planPrice.value) >= 0);
+      planBtn.disabled = !(v1 && v2 && v3);
+    }
+
+    [planName, planDuration, planPrice].forEach(el => el.addEventListener('input', validatePlanForm));
+
+    // Edit Form Validation
+    const editForm = document.getElementById('editForm');
+    const editName = document.getElementById('editName');
+    const editDuration = document.getElementById('editDuration');
+    const editPrice = document.getElementById('editPrice');
+    const editBtn = document.getElementById('editBtn');
+
+    function validateEditForm() {
+      const v1 = validate(editName, 'editName-msg', editName.value.trim().length > 0);
+      const v2 = validate(editDuration, 'editDuration-msg', parseInt(editDuration.value) >= 1);
+      const v3 = validate(editPrice, 'editPrice-msg', parseFloat(editPrice.value) >= 0);
+      editBtn.disabled = !(v1 && v2 && v3);
+    }
+
+    [editName, editDuration, editPrice].forEach(el => el.addEventListener('input', validateEditForm));
+
+    // Initial validation
+    validatePasswordForm();
+    validateTrialForm();
+    validatePlanForm();
   </script>
 </body>
 </html>`;

@@ -2,6 +2,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const db = require('../config/db');
+const bcrypt = require('bcryptjs');
 
 // Migration order - dependencies first
 const migrations = [
@@ -40,6 +41,12 @@ const migrations = [
     name: 'Reschedule Count',
     file: 'migration_reschedule_count.sql',
     description: 'Adds reschedule_count column to appointments table'
+  },
+  {
+    name: 'Super Admins',
+    file: 'migration_super_admins.sql',
+    description: 'Creates super_admins table for web dashboard authentication',
+    seedFunction: seedSuperAdmins
   }
 ];
 
@@ -109,6 +116,33 @@ async function seedSubscriptions() {
   }
   
   console.log(`     ✅ Seeded: ${seededCount}, Skipped: ${skippedCount}`);
+}
+
+async function seedSuperAdmins() {
+  console.log('  🌱 Seeding initial super admin...');
+  
+  const username = 'hyfos';
+  const password = 'hyfos2305';
+  
+  // Check if admin already exists
+  const existingAdmin = await db.query(
+    'SELECT id FROM super_admins WHERE username = $1',
+    [username]
+  );
+  
+  if (existingAdmin.rows.length > 0) {
+    console.log(`     ⏭️  Super admin "${username}" already exists, skipping`);
+    return;
+  }
+  
+  const passwordHash = await bcrypt.hash(password, 10);
+  
+  await db.query(
+    'INSERT INTO super_admins (username, password_hash) VALUES ($1, $2)',
+    [username, passwordHash]
+  );
+  
+  console.log(`     ✅ Created super admin: ${username}`);
 }
 
 async function runMigrations() {
