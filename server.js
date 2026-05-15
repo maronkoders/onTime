@@ -30,9 +30,17 @@ app.use(session({
 // Middleware
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
-app.use(morgan('combined', {
-  stream: { write: (message) => logger.info(message.trim()) },
-}));
+
+// Only use morgan in development or for errors in production
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('dev'));
+} else {
+  // In production, only log critical requests or nothing to save CPU
+  app.use(morgan('tiny', {
+    skip: (req, res) => res.statusCode < 400,
+    stream: { write: (message) => logger.info(message.trim()) },
+  }));
+}
 
 // Health check
 app.get('/health', (req, res) => {
