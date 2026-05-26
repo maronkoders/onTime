@@ -1,8 +1,13 @@
 require('dotenv').config();
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
+
+// Force pg to interpret TIMESTAMP WITHOUT TIME ZONE as UTC
+// OID 1114 = timestamp without time zone
+// Without this, pg uses the local machine timezone, causing offset bugs
+types.setTypeParser(1114, (str) => new Date(str + 'Z'));
 
 // Debug: Log what DATABASE_URL looks like
 const dbUrl = process.env.DATABASE_URL;
