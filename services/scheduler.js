@@ -74,12 +74,17 @@ async function getAvailableSlots(tenantId, dateStr, serviceDurationMinutes) {
     // Get the UTC date string for querying (may span two UTC dates)
     // Query using the Harare date converted to UTC range
     const utcQueryDate = utcDateStart.toISOString().split('T')[0];
+    logger.info(`[SCHEDULER DEBUG] Querying appointments for tenant ${tenantId} on UTC date ${utcQueryDate}`);
+    logger.info(`[SCHEDULER DEBUG] utcDateStart: ${utcDateStart.toISOString()}, utcDateEnd: ${utcDateEnd.toISOString()}`);
     let existingAppointments = await appointmentModel.getConfirmedForTenantOnDate(tenantId, utcQueryDate);
+    logger.info(`[SCHEDULER DEBUG] Found ${existingAppointments.length} appointments on UTC date ${utcQueryDate}`);
 
     // If UTC date differs from Harare date, also query the next day
     const utcEndDate = utcDateEnd.toISOString().split('T')[0];
     if (utcEndDate !== utcQueryDate) {
+      logger.info(`[SCHEDULER DEBUG] Also querying UTC date ${utcEndDate}`);
       const moreAppts = await appointmentModel.getConfirmedForTenantOnDate(tenantId, utcEndDate);
+      logger.info(`[SCHEDULER DEBUG] Found ${moreAppts.length} more appointments on UTC date ${utcEndDate}`);
       existingAppointments = existingAppointments.concat(moreAppts);
     }
 
@@ -117,11 +122,15 @@ async function getAvailableSlots(tenantId, dateStr, serviceDurationMinutes) {
       // Convert to Harare local minutes from midnight
       const startLocal = (startUTC.getUTCHours() + HARARE_OFFSET_HOURS) * 60 + startUTC.getUTCMinutes();
       const endLocal = (endUTC.getUTCHours() + HARARE_OFFSET_HOURS) * 60 + endUTC.getUTCMinutes();
+      logger.info(`[SCHEDULER DEBUG] Occupied interval: ${appt.start_time} -> ${Math.floor(startLocal/60)}:${String(startLocal%60).padStart(2,'0')}-${Math.floor(endLocal/60)}:${String(endLocal%60).padStart(2,'0')} (appt ${appt.id})`);
       return { start: startLocal, end: endLocal };
     });
+    logger.info(`[SCHEDULER DEBUG] Total occupied intervals: ${occupied.length}`);
 
     // Get dynamic slot increment based on average service duration
     const slotIncrementMinutes = await getAverageServiceDuration(tenantId);
+
+    logger.info(`[SCHEDULER DEBUG] Generating slots from ${Math.floor(minSlotMinutes/60)}:${String(minSlotMinutes%60).padStart(2,'0')} to ${Math.floor(closeMinutes/60)}:${String(closeMinutes%60).padStart(2,'0')}, slot increment: ${slotIncrementMinutes}min, service duration: ${serviceDurationMinutes}min`);
 
     // Iterate through time slots starting from minSlotMinutes (which may be current time for today)
     for (let t = minSlotMinutes; t + serviceDurationMinutes <= closeMinutes; t += slotIncrementMinutes) {
@@ -133,12 +142,15 @@ async function getAvailableSlots(tenantId, dateStr, serviceDurationMinutes) {
         (occ) => slotStart < occ.end && slotEnd > occ.start
       );
 
-      if (!hasConflict) {
-        const hh = String(Math.floor(t / 60)).padStart(2, '0');
-        const mm = String(t % 60).padStart(2, '0');
-        slots.push(`${hh}:${mm}`);
+      const timeStr = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+      if (hasConflict) {
+        logger.info(`[SCHEDULER DEBUG] Slot ${timeStr} has CONFLICT, skipping`);
+      } else {
+        logger.info(`[SCHEDULER DEBUG] Slot ${timeStr} is available`);
+        slots.push(timeStr);
       }
     }
+    logger.info(`[SCHEDULER DEBUG] Total slots generated: ${slots.length}`);
 
     return slots;
   } catch (err) {

@@ -126,13 +126,14 @@ async function cancelByClient(id, clientPhone) {
 async function getConfirmedForTenantOnDate(tenantId, dateStr) {
   // For scheduler - get confirmed appointments for a specific date
   // dateStr should correspond to UTC range for that Harare date
-  const startOfDay = `${dateStr}T00:00:00Z`;
-  const endOfDay = `${dateStr}T23:59:59Z`;
+  // Use timestamp with explicit UTC timezone to match stored ISO strings
+  const startOfDay = `${dateStr}T00:00:00.000Z`;
+  const endOfDay = `${dateStr}T23:59:59.999Z`;
   const result = await db.query(
     `SELECT * FROM appointments
      WHERE tenant_id = $1
-       AND start_time >= $2
-       AND start_time <= $3
+       AND start_time >= $2::timestamp with time zone
+       AND start_time <= $3::timestamp with time zone
        AND status = 'confirmed'
      ORDER BY start_time`,
     [tenantId, startOfDay, endOfDay]
