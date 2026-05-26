@@ -144,8 +144,8 @@ async function startBooking(phone, bookingCode) {
     return sendMessage(phone, message);
   }
 
-  // Check if this is a returning client (has previous appointments at this salon)
-  const clientAppointments = await appointmentModel.findByClientPhone(phone);
+  // Check if this is a returning client (has any appointments at this salon, past or future)
+  const clientAppointments = await appointmentModel.findAllByClientPhone(phone);
   const previousAppointments = clientAppointments.filter(a => a.tenant_id === tenant.id);
   const isReturningClient = previousAppointments.length > 0;
 

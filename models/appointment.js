@@ -87,6 +87,22 @@ async function findByClientPhone(clientPhone) {
   return result.rows;
 }
 
+async function findAllByClientPhone(clientPhone) {
+  // Get ALL confirmed appointments for client (past and future)
+  const result = await db.query(
+    `SELECT a.*, s.name as service_name, s.duration_minutes, s.price,
+            t.name as salon_name
+     FROM appointments a
+     LEFT JOIN services s ON a.service_id = s.id
+     LEFT JOIN tenants t ON a.tenant_id = t.id
+     WHERE a.client_phone = $1
+       AND a.status = 'confirmed'
+     ORDER BY a.start_time DESC`,
+    [clientPhone]
+  );
+  return result.rows;
+}
+
 async function cancel(id, tenantId) {
   const result = await db.query(
     `UPDATE appointments SET status = 'cancelled'
@@ -173,6 +189,7 @@ module.exports = {
   findUpcomingByTenant,
   findAllByTenant,
   findByClientPhone,
+  findAllByClientPhone,
   findUpcomingByClientPhone,
   reschedule,
   cancel,

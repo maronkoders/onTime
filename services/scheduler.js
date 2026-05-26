@@ -1,9 +1,29 @@
 const tenantModel = require('../models/tenant');
 const appointmentModel = require('../models/appointment');
+const serviceModel = require('../models/service');
 const { getDayOfWeek, parseTimeString, HARARE_OFFSET_HOURS, todayHarare, nowHarare } = require('../utils/time');
 const logger = require('../utils/logger');
 
-const SLOT_INCREMENT_MINUTES = 30;
+const DEFAULT_SLOT_INCREMENT_MINUTES = 30;
+
+/**
+ * Calculate the average duration of all services for a tenant.
+ * @param {number} tenantId
+ * @returns {number} Average duration in minutes (defaults to 30 if no services)
+ */
+async function getAverageServiceDuration(tenantId) {
+  try {
+    const services = await serviceModel.findByTenant(tenantId);
+    if (!services || services.length === 0) {
+      return DEFAULT_SLOT_INCREMENT_MINUTES;
+    }
+    const totalDuration = services.reduce((sum, service) => sum + (service.duration_minutes || 0), 0);
+    return Math.round(totalDuration / services.length);
+  } catch (err) {
+    logger.error(`Error calculating average service duration: ${err.message}`);
+    return DEFAULT_SLOT_INCREMENT_MINUTES;
+  }
+}
 
 /**
  * Get available booking slots for a tenant on a given date.
@@ -100,8 +120,11 @@ async function getAvailableSlots(tenantId, dateStr, serviceDurationMinutes) {
       return { start: startLocal, end: endLocal };
     });
 
+    // Get dynamic slot increment based on average service duration
+    const slotIncrementMinutes = await getAverageServiceDuration(tenantId);
+
     // Iterate through time slots starting from minSlotMinutes (which may be current time for today)
-    for (let t = minSlotMinutes; t + serviceDurationMinutes <= closeMinutes; t += SLOT_INCREMENT_MINUTES) {
+    for (let t = minSlotMinutes; t + serviceDurationMinutes <= closeMinutes; t += slotIncrementMinutes) {
       const slotStart = t;
       const slotEnd = t + serviceDurationMinutes;
 
