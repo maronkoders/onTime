@@ -1,0 +1,1 @@
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS send_customer_reminders BOOLEAN DEFAULT TRUE;

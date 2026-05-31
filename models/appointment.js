@@ -181,6 +181,23 @@ async function reschedule(appointmentId, { newDate, newStartTime, newEndTime }) 
   return result.rows[0] || null;
 }
 
+async function findConfirmedAppointmentsForDate(dateStr) {
+  const startOfDay = `${dateStr}T00:00:00Z`;
+  const endOfDay = `${dateStr}T23:59:59Z`;
+  const result = await db.query(
+    `SELECT a.*, s.name as service_name, s.duration_minutes, s.price,
+            t.name as salon_name, t.location as salon_location, t.owner_phone as salon_owner_phone, t.send_customer_reminders
+     FROM appointments a
+     LEFT JOIN services s ON a.service_id = s.id
+     LEFT JOIN tenants t ON a.tenant_id = t.id
+     WHERE a.start_time >= $1
+       AND a.start_time <= $2
+       AND a.status = 'confirmed'`,
+    [startOfDay, endOfDay]
+  );
+  return result.rows;
+}
+
 module.exports = {
   create,
   findById,
@@ -195,4 +212,5 @@ module.exports = {
   cancel,
   cancelByClient,
   getConfirmedForTenantOnDate,
+  findConfirmedAppointmentsForDate,
 };

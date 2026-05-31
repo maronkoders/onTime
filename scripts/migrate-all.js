@@ -47,6 +47,11 @@ const migrations = [
     file: 'migration_super_admins.sql',
     description: 'Creates super_admins table for web dashboard authentication',
     seedFunction: seedSuperAdmins
+  },
+  {
+    name: 'Customer Reminders Setting',
+    file: 'migration_customer_reminders.sql',
+    description: 'Adds send_customer_reminders column to tenants table'
   }
 ];
 

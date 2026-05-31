@@ -264,6 +264,20 @@ router.post('/salon/:id/activate-subscription', requireSuperAdmin, async (req, r
   }
 });
 
+// Toggle customer reminders (protected)
+router.post('/salon/:id/toggle-reminders', requireSuperAdmin, async (req, res) => {
+  try {
+    const salonId = parseInt(req.params.id, 10);
+    const { sendCustomerReminders } = req.body;
+    const enabled = sendCustomerReminders === 'true';
+    await tenantModel.updateCustomerRemindersSetting(salonId, enabled);
+    res.redirect(`/admin/salon/${salonId}`);
+  } catch (err) {
+    logger.error(`Toggle customer reminders error: ${err.message}`);
+    res.status(500).send('Error updating customer reminders setting');
+  }
+});
+
 async function getOverviewStats() {
   const tenants = await tenantModel.getAll();
   let subscriptionFees = [];
@@ -1144,13 +1158,16 @@ function getSalonDetailPage(salon) {
 <head>
   <title>OnTime Super Admin - ${escapeHtml(salon.name)}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: #f5f7fa;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8fafc;
       min-height: 100vh;
+      color: #0f172a;
     }
+    h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; }
     .header {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
@@ -1316,47 +1333,172 @@ function getSalonDetailPage(salon) {
       padding: 40px 20px;
       color: #64748b;
     }
-    .btn {
-      padding: 8px 16px;
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: 500;
+    .account-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+    .account-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      gap: 16px;
+      transition: all 0.3s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .account-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+      border-color: #cbd5e1;
+    }
+    .card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+    .card-content {
+      flex: 1;
+    }
+    .card-content h4 {
+      font-size: 16px;
+      color: #0f172a;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .card-content p {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+    .switch-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
       cursor: pointer;
-      border: none;
-      transition: all 0.2s;
     }
-    .btn-success {
-      background: #10b981;
-      color: white;
+    .switch-text {
+      font-size: 14px;
+      color: #475569;
     }
-    .btn-success:hover {
-      background: #059669;
+    .switch-text strong {
+      color: #0f172a;
     }
-    .btn-danger {
-      background: #ef4444;
-      color: white;
+    .ios-switch {
+      position: relative;
+      display: inline-block;
+      width: 46px;
+      height: 26px;
     }
-    .btn-danger:hover {
-      background: #dc2626;
+    .ios-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
     }
-    .btn-primary {
-      background: #667eea;
-      color: white;
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #cbd5e1;
+      transition: .3s;
+      border-radius: 34px;
     }
-    .btn-primary:hover {
-      background: #5568d3;
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
-    .management-form {
+    input:checked + .slider.status-slider {
+      background-color: #10b981;
+    }
+    input:not(:checked) + .slider.status-slider {
+      background-color: #ef4444;
+    }
+    input:checked + .slider.reminder-slider {
+      background-color: #6366f1;
+    }
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+    .premium-form {
       display: flex;
       gap: 10px;
       align-items: center;
     }
-    .management-form input {
-      width: 60px;
-      padding: 6px 10px;
-      border: 1px solid #d1d5db;
-      border-radius: 4px;
+    .input-group {
+      display: flex;
+      align-items: center;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #f8fafc;
+      transition: all 0.2s;
+      width: 110px;
+      height: 38px;
+    }
+    .input-group:focus-within {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+      background: #ffffff;
+    }
+    .input-group input {
+      border: none;
+      background: transparent;
+      padding: 0 8px 0 12px;
       font-size: 14px;
+      font-weight: 600;
+      color: #1e293b;
+      width: 100%;
+      outline: none;
+      font-family: inherit;
+    }
+    .input-suffix {
+      padding-right: 12px;
+      color: #64748b;
+      font-size: 13px;
+      font-weight: 500;
+      user-select: none;
+    }
+    .btn-premium {
+      height: 38px;
+      padding: 0 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    .btn-extend {
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      color: white;
+    }
+    .btn-extend:hover {
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+    .btn-activate {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+    }
+    .btn-activate:hover {
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
     }
     @media (max-width: 768px) {
       .header { padding: 16px 20px; }
@@ -1416,23 +1558,77 @@ function getSalonDetailPage(salon) {
         <h3>🔧 Account Management</h3>
       </div>
       <div style="padding: 24px;">
-        <div style="margin-bottom: 20px;">
-          <h4 style="font-size: 14px; color: #64748b; margin-bottom: 12px;">Account Status</h4>
-          ${toggleButton}
-        </div>
-        <div style="margin-bottom: 20px;">
-          <h4 style="font-size: 14px; color: #64748b; margin-bottom: 12px;">Extend Trial</h4>
-          <form method="POST" action="/admin/salon/${salon.id}/extend-trial" class="management-form">
-            <input type="number" name="days" value="14" min="1" max="365">
-            <button type="submit" class="btn btn-primary">Extend Trial</button>
-          </form>
-        </div>
-        <div>
-          <h4 style="font-size: 14px; color: #64748b; margin-bottom: 12px;">Activate Subscription</h4>
-          <form method="POST" action="/admin/salon/${salon.id}/activate-subscription" class="management-form">
-            <input type="number" name="days" value="30" min="1" max="365">
-            <button type="submit" class="btn btn-success">Activate Subscription</button>
-          </form>
+        <div class="account-grid">
+          
+          <!-- Account Status Card -->
+          <div class="account-card">
+            <div class="card-icon" style="background: #e0e7ff; color: #4f46e5;">🛡️</div>
+            <div class="card-content">
+              <h4>Account Status</h4>
+              <p>Temporarily suspend or restore booking services for this salon.</p>
+              <form method="POST" action="/admin/salon/${salon.id}/${isActive ? 'deactivate' : 'activate'}">
+                <label class="switch-label">
+                  <div class="ios-switch">
+                    <input type="checkbox" ${isActive ? 'checked' : ''} onchange="this.form.submit()">
+                    <span class="slider status-slider"></span>
+                  </div>
+                  <span class="switch-text"><strong>${isActive ? 'Active' : 'Deactivated'}</strong></span>
+                </label>
+              </form>
+            </div>
+          </div>
+
+          <!-- Customer Reminders Card -->
+          <div class="account-card">
+            <div class="card-icon" style="background: #e0e7ff; color: #4f46e5;">⏰</div>
+            <div class="card-content">
+              <h4>Customer Reminders</h4>
+              <p>Send automated WhatsApp reminders to customers before their appointments.</p>
+              <form method="POST" action="/admin/salon/${salon.id}/toggle-reminders">
+                <input type="hidden" name="sendCustomerReminders" value="${salon.send_customer_reminders !== false ? 'false' : 'true'}">
+                <label class="switch-label">
+                  <div class="ios-switch">
+                    <input type="checkbox" ${salon.send_customer_reminders !== false ? 'checked' : ''} onchange="this.form.submit()">
+                    <span class="slider reminder-slider"></span>
+                  </div>
+                  <span class="switch-text"><strong>${salon.send_customer_reminders !== false ? 'Enabled' : 'Disabled'}</strong></span>
+                </label>
+              </form>
+            </div>
+          </div>
+
+          <!-- Extend Trial Card -->
+          <div class="account-card">
+            <div class="card-icon" style="background: #fef3c7; color: #d97706;">⏳</div>
+            <div class="card-content">
+              <h4>Extend Trial</h4>
+              <p>Grant additional free trial days for testing booking features.</p>
+              <form method="POST" action="/admin/salon/${salon.id}/extend-trial" class="premium-form">
+                <div class="input-group">
+                  <input type="number" name="days" value="14" min="1" max="365">
+                  <span class="input-suffix">days</span>
+                </div>
+                <button type="submit" class="btn-premium btn-extend">Extend</button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Activate Subscription Card -->
+          <div class="account-card">
+            <div class="card-icon" style="background: #d1fae5; color: #059669;">💎</div>
+            <div class="card-content">
+              <h4>Activate Plan</h4>
+              <p>Activate a paid subscription plan to restore or extend booking services.</p>
+              <form method="POST" action="/admin/salon/${salon.id}/activate-subscription" class="premium-form">
+                <div class="input-group">
+                  <input type="number" name="days" value="30" min="1" max="365">
+                  <span class="input-suffix">days</span>
+                </div>
+                <button type="submit" class="btn-premium btn-activate">Activate</button>
+              </form>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

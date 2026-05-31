@@ -139,6 +139,14 @@ async function activateSubscription(tenantId, days) {
   return result.rows[0];
 }
 
+async function updateCustomerRemindersSetting(tenantId, enabled) {
+  const result = await db.query(
+    'UPDATE tenants SET send_customer_reminders = $1 WHERE id = $2 RETURNING *',
+    [enabled, tenantId]
+  );
+  return result.rows[0];
+}
+
 module.exports = {
   findByPhone,
   findByBookingCode,
@@ -153,4 +161,5 @@ module.exports = {
   deactivateTenant,
   extendTrial,
   activateSubscription,
+  updateCustomerRemindersSetting,
 };

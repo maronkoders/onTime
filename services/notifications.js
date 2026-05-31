@@ -2,7 +2,7 @@ const cron = require('node-cron');
 const tenantModel = require('../models/tenant');
 const appointmentModel = require('../models/appointment');
 const { sendMessage } = require('./whatsapp');
-const { todayHarare, toHarareTime, formatTime, HARARE_OFFSET_HOURS } = require('../utils/time');
+const { todayHarare, toHarareTime, formatTime, formatDateLong, HARARE_OFFSET_HOURS } = require('../utils/time');
 const logger = require('../utils/logger');
 
 function startDailyNotifications() {
@@ -10,6 +10,7 @@ function startDailyNotifications() {
   cron.schedule('0 10 * * *', async () => {
     logger.info('Running daily appointment notifications...');
     await sendDailySchedules();
+    await sendClientReminders();
   });
 
   logger.info('Daily notification cron job scheduled (12:00 Harare time)');
@@ -78,4 +79,52 @@ async function sendDailySchedules() {
   }
 }
 
-module.exports = { startDailyNotifications, sendDailySchedules };
+async function sendClientReminders() {
+  try {
+    const todayStr = todayHarare();
+    const todayDate = new Date(todayStr + 'T12:00:00Z');
+    todayDate.setUTCDate(todayDate.getUTCDate() + 1);
+    const tomorrowStr = todayDate.toISOString().split('T')[0];
+
+    logger.info(`Running client reminders for date ${tomorrowStr}...`);
+
+    const appointments = await appointmentModel.findConfirmedAppointmentsForDate(tomorrowStr);
+    logger.info(`Found ${appointments.length} confirmed appointments for client reminders on ${tomorrowStr}`);
+
+    for (const appt of appointments) {
+      if (appt.send_customer_reminders !== false) {
+        try {
+          const hTime = toHarareTime(appt.start_time);
+          const timeStr = formatTime(hTime);
+          const formattedDate = formatDateLong(tomorrowStr);
+
+          const clientPhone = appt.client_phone;
+          const clientName = appt.client_name;
+          const serviceName = appt.service_name || 'Service';
+          const salonName = appt.salon_name;
+          const location = appt.salon_location ? `\n📍 Location: *${appt.salon_location}*` : '';
+
+          const message = `⏰ *Appointment Reminder*\n\n` +
+            `Hello *${clientName}*! 👋\n` +
+            `This is a friendly reminder that you have an upcoming appointment tomorrow at *${salonName}*:\n\n` +
+            `💇 Service: *${serviceName}*\n` +
+            `📅 Date: *${formattedDate}*\n` +
+            `🕐 Time: *${timeStr}*` +
+            location + `\n\n` +
+            `We look forward to seeing you! If you need to cancel or view your appointment details, reply with *HELP* or *1* (My appointment) anytime. 🎉`;
+
+          await sendMessage(clientPhone, message);
+          logger.info(`Client reminder sent to ${clientName} (${clientPhone}) for appointment #${appt.id}`);
+        } catch (err) {
+          logger.error(`Failed to send reminder for appointment #${appt.id} to client: ${err.message}`);
+        }
+      } else {
+        logger.info(`Skipped reminder for appointment #${appt.id}: tenant ${appt.tenant_id} has customer reminders disabled`);
+      }
+    }
+  } catch (err) {
+    logger.error(`Failed to run client reminders: ${err.message}`);
+  }
+}
+
+module.exports = { startDailyNotifications, sendDailySchedules, sendClientReminders };
